@@ -14,6 +14,7 @@ description: 评审 Windows 落盘的验收证据，对照 Mac 已固化子 skil
 1. **采集事实**：按输入类型选择只读入口——
    - 收到显式 sealed run bundle：先跑 `node scripts/review-run-bundle.mjs <bundleDir>`，核对 seal、manifest、runId、producer commit、事件绑定和 candidate path/hash，生成绑定 exact bundle 的 `xhs.review-receipt.v1` JSON。
    - 需要把可修 finding 交给 Windows consumer 时：跑 `node scripts/review-run-bundle.mjs <bundleDir> --repair-proposals`。aggregate bundle 如需绑定已收编 Skill，另带 `--skill-path/--skill-version/--skill-sha256`。它额外输出不可变 `xhs.repair-proposal.v1` 与现有 registry knowledge 信封；只生成 JSON，不 POST、不 claim、不部署。proposal 的后续 claim/heartbeat/source checkpoint/completion 必须走 `contracts/repair-*.v1.schema.json` + append-only sealed outbox。
+   - Mac 自动巡检发布入口：先用 `node scripts/auto-review-publish.mjs` dry-run；受权的定时任务才加 `--publish`。它只扫描 sealed bundle、核本仓 Skill hash、复用已提交 proposal 的稳定 bytes，并以 exact knowledge envelope 幂等写入现有 registry；409 只在 12 个 transport 字段完全一致时调和，否则 fail closed。发布终点永远是 `proposed`，不 claim、不批准、不部署、不 replay、不碰设备。
    - 只有 legacy Windows 停车场证据：跑 `node scripts/review-windows.mjs`。它 SSH Windows 拉 `tmp-know/ACCEPTANCE-*.md` + `EXPLORE-*.md`，本地遍历 `skills/<app>/*/SKILL.md` frontmatter（version/verified），对照 exit 码，输出 markdown 事实表到 stdout。
    - 两个脚本都只列机械事实，**不做主观评判、不触发 adopt、不碰设备**；bundle review 失败只阻止收编，不反写 Windows 业务结果。
 
@@ -33,6 +34,7 @@ description: 评审 Windows 落盘的验收证据，对照 Mac 已固化子 skil
 ## 边界
 
 - **不碰设备**：不跑业务脚本、不提交 job、不 SSH 推部署、不替 Windows 改 op 表/建地图/补探索内容（坐标/真动作标注/04 占位）。
+- **自动巡检只发布提案**：允许 Mac 定时读取 sealed bundle 并把可修 finding 发布为 `proposed` knowledge；registry 写失败只报 transport debt，不改变原业务结果，也不升级成 review verdict。相同 proposal exact-match 视为幂等成功，任何内容冲突立即停发。
 - **repair 权限分离**：Windows 只可 claim/heartbeat/fix/source checkpoint/completion，不能自批、写 Mac 或改 review verdict；`approved/request_changes/deployable/cancelled` 必须绑定可信 Mac commit 上的独立 receipt，不能只信 actor role。`replaying` 必须另带部署/重放授权引用/hash并由外部 verifier 核验，repair proposal 本身不是部署或手机授权。
 - **绝对禁止自动改**：根 `skills/SKILL.md`、治理权限语义、payment guard、approval/Standing Grant、密钥/认证、`control.db`、真实支付、不可逆 effect、Windows 部署配置。
 - **评判全自动、贴路由守确认**：步骤 1-3 自主做，步骤 4 必须人确认。
@@ -49,5 +51,6 @@ description: 评审 Windows 落盘的验收证据，对照 Mac 已固化子 skil
 - `scripts/review-windows.mjs` — 采集脚本（零依赖、只读、`ADOPT_SSH` 覆盖 host、不进 `npm run check`）。
 - `scripts/review-run-bundle.mjs` — sealed bundle 离线核验与 `xhs.review-receipt.v1` 生成器（零依赖、只读、不 SSH、不 adopt）。
 - `scripts/create-repair-proposal.mjs` — 从 finding 生成/校验不可变 proposal 与 registry knowledge 信封（纯离线）。
+- `scripts/auto-review-publish.mjs` — Mac sealed-bundle 自动巡检与 exact-envelope 幂等发布器（默认 dry-run；`--publish` 也只到 proposed）。
 - `scripts/lib/repair-proposal.mjs` — idempotency、状态归约、scope/diff/secret guard、checkpoint/completion 校验。
 - `scripts/lib/repair-authority-verifiers.mjs` — 对可信 Mac Git receipt、outbox claim.lock、带独立人类 Ed25519 签名的 replay authorization 与 completion bundle 做实际 bytes/hash/binding 核验；consumer 不能用 `()=>true` 代替，也不能把 source push 权当 replay 权。

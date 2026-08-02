@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaId": "xhs.mac-auto-review-publisher-scope.v1",
+  "taskId": "MAC-AUTO-REVIEW-PUBLISHER-V1",
+  "baseline": "446494ab7d03382b268ff973ac12951cb13fc4c6",
+  "authorization": {
+    "macSealedBundleReview": true,
+    "registryProposalPublish": true,
+    "recurringAutomation": true,
+    "commitAndPush": true,
+    "windowsClaimOrDeploy": false,
+    "deviceActions": false,
+    "jobOrSessionSubmit": false,
+    "automaticReviewApproval": false,
+    "automaticReplay": false
+  },
+  "repositories": {
+    "A": {
+      "name": "xhs-registry",
+      "baseline": "446494ab7d03382b268ff973ac12951cb13fc4c6",
+      "allowedFiles": [
+        ".claude/skills/registry-review/SKILL.md",
+        "docs/plans/2026-08-02-mac-auto-review-publisher.files.json",
+        "package.json",
+        "scripts/auto-review-publish.mjs",
+        "scripts/mac-auto-review-scope-guard.mjs",
+        "scripts/secret-scan.mjs",
+        "tests/auto-review-publish.test.mjs",
+        "tests/nonpayment-liveness.test.mjs"
+      ],
+      "allowedPrefixes": [],
+      "forbiddenFiles": [
+        "skills/SKILL.md",
+        "registry.mjs",
+        "install-registry-task.ps1",
+        "control.db",
+        "task-launch.json"
+      ],
+      "forbiddenPrefixes": [
+        "skills/.SYNCED-FROM",
+        "tmp-know/",
+        "xhs-agent-runs/"
+      ]
+    }
+  }
+}
