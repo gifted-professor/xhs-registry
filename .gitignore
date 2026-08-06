@@ -8,6 +8,8 @@ registry.db-wal
 registry.db-shm
 runtime/
 node_modules/
+__pycache__/
+*.pyc
 
 # feishu-to-xianyu 下载的 Yupoo 原图运行态
 tmp-imgs/
