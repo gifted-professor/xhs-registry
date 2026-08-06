@@ -25,6 +25,27 @@ class ResolverConfig:
     proposal_pad_ratio: float = 0.18
     grabcut_iterations: int = 3
     max_blocks: int = 256
+    # Media-region suppression. A large contiguous photo/video area should not
+    # spawn per-texture candidates; overlay UI on it is kept separately.
+    media_suppression: bool = True
+    media_min_area_ratio: float = 0.22
+    media_edge_density: float = 0.045
+    media_saturation_mean: float = 28.0
+    media_overlay_max_area_ratio: float = 0.004
+    media_overlay_edge_margin: int = 20
+    media_overlay_score: float = 0.68
+    media_card_min_area_ratio: float = 0.02
+    media_card_score: float = 0.60
+    media_close_kernel: int = 9
+    media_close_iterations: int = 2
+    # Low-contrast controls (toggles, hollow icons) sit near the background
+    # luminance and produce no strong Canny edges. Detect them separately with
+    # a low threshold so they are not invisible to the resolver.
+    weak_control_detection: bool = True
+    weak_control_min_area_ratio: float = 0.0004
+    weak_control_max_area_ratio: float = 0.012
+    weak_control_max_aspect: float = 3.2
+    weak_control_min_fill: float = 0.45
 
 
 @dataclass(frozen=True)
@@ -32,6 +53,14 @@ class Proposal:
     kind: str
     bbox: tuple[int, int, int, int]
     score: float
+
+
+@dataclass(frozen=True)
+class MediaRegion:
+    bbox: tuple[int, int, int, int]
+    area_ratio: float
+    edge_density: float
+    saturation_mean: float
 
 
 def image_sha256(path: Path) -> str:
@@ -73,6 +102,140 @@ def box_contains(outer: tuple[int, int, int, int], inner: tuple[int, int, int, i
     return ox <= ix and oy <= iy and ox + ow >= ix + iw and oy + oh >= iy + ih
 
 
+def box_intersection(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> int:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    x1 = max(ax, bx)
+    y1 = max(ay, by)
+    x2 = min(ax + aw, bx + bw)
+    y2 = min(ay + ah, by + bh)
+    return max(0, x2 - x1) * max(0, y2 - y1)
+
+
+def box_center(box: tuple[int, int, int, int]) -> tuple[float, float]:
+    x, y, w, h = box
+    return x + w / 2.0, y + h / 2.0
+
+
+def detect_media_regions(image: np.ndarray, config: ResolverConfig) -> list[MediaRegion]:
+    """Detect large contiguous photo/video areas.
+
+    A media region is a big connected component whose interior is texture-rich
+    (high edge density) and color-rich (non-trivial saturation), unlike flat UI
+    surfaces. Single-frame heuristic; a second frame would make this far more
+    reliable but is out of scope for the offline PoC.
+    """
+
+    height, width = image.shape[:2]
+    image_area = width * height
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(gray, 40, 120)
+    # Close texture into solid blobs, then fill holes so a photo becomes one region.
+    # Kernel/iterations stay modest so the media blob does not bridge across the
+    # gap into the top or bottom UI bars.
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (config.media_close_kernel, config.media_close_kernel)
+    )
+    blobs = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=config.media_close_iterations)
+    blobs = fill_holes(blobs)
+    contours, _ = cv2.findContours(blobs, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Physical screen chrome (status bar, top app bar, bottom nav) is never media.
+    top_ui_limit = round(height * 0.10)
+    bottom_ui_start = round(height * 0.93)
+
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    saturation = hsv[:, :, 1]
+    regions: list[MediaRegion] = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        area = w * h
+        if area < image_area * config.media_min_area_ratio:
+            continue
+        if w < width * 0.4 or h < height * 0.18:
+            continue
+        # Re-derive a tight bounding box from this component's own filled pixels
+        # so a rectangular bbox never swallows adjacent UI bars.
+        component = np.zeros((height, width), np.uint8)
+        cv2.drawContours(component, [contour], -1, 255, -1)
+        inner, _ = cv2.findContours(component, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        if not inner:
+            continue
+        largest = max(inner, key=cv2.contourArea)
+        tx, ty, tw, th = cv2.boundingRect(largest)
+        # Clip to the content band: even if the blob bridges into chrome, the
+        # reported region must not extend over the status/top bars or bottom nav.
+        ty = max(ty, top_ui_limit)
+        bottom = min(ty + th, bottom_ui_start)
+        th = bottom - ty
+        if th < height * 0.15:
+            continue
+        region_edges = edges[ty : ty + th, tx : tx + tw]
+        edge_density = float(cv2.countNonZero(region_edges) / max(1, region_edges.size))
+        sat_mean = float(saturation[ty : ty + th, tx : tx + tw].mean())
+        if edge_density < config.media_edge_density and sat_mean < config.media_saturation_mean:
+            continue
+        regions.append(
+            MediaRegion(
+                bbox=(tx, ty, tw, th),
+                area_ratio=round((tw * th) / image_area, 4),
+                edge_density=round(edge_density, 4),
+                saturation_mean=round(sat_mean, 2),
+            )
+        )
+    regions.sort(key=lambda region: -region.area_ratio)
+    return regions
+
+
+def is_media_overlay(
+    proposal: Proposal, region: MediaRegion, config: ResolverConfig, image_area: int
+) -> bool:
+    """A small high-contrast block sitting on media is likely a floating control
+    (pause, mute, scan, close-ad) rather than media texture, so it survives.
+
+    Overlay controls are compact and roughly icon-shaped; tree/rock/brush
+    textures are larger, elongated, or weak. A natural texture blob rarely has
+    both a tight bounding box and a high shape score."""
+
+    x, y, w, h = proposal.bbox
+    rx, ry, rw, rh = region.bbox
+    area = w * h
+    if area > image_area * config.media_overlay_max_area_ratio:
+        return False
+    if proposal.score < config.media_overlay_score:
+        return False
+    aspect = max(w, h) / max(1, min(w, h))
+    if aspect > 3.0:
+        return False
+    margin = config.media_overlay_edge_margin
+    near_edge = (
+        x - rx <= margin
+        or y - ry <= margin
+        or (rx + rw) - (x + w) <= margin
+        or (ry + rh) - (y + h) <= margin
+    )
+    # Strong, compact shapes survive anywhere on the media (pause/mute icons sit
+    # mid-frame); near the edge we also allow slightly weaker close/scan chips.
+    return proposal.score >= config.media_overlay_score + 0.06 or near_edge
+
+
+def is_media_card(proposal: Proposal, config: ResolverConfig, image_area: int) -> bool:
+    """A large, well-formed photo block inside the media region is a tappable
+    content card (search-result / feed thumbnail), not background texture.
+    Keep one candidate per card so it stays clickable."""
+
+    x, y, w, h = proposal.bbox
+    area = w * h
+    if area < image_area * config.media_card_min_area_ratio:
+        return False
+    if proposal.score < config.media_card_score:
+        return False
+    aspect = max(w, h) / max(1, min(w, h))
+    # Cards are portrait/landscape rectangles, not long thin texture streaks.
+    return aspect <= 2.4
+
+
 def contour_proposals(image: np.ndarray, config: ResolverConfig) -> list[Proposal]:
     height, width = image.shape[:2]
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -102,6 +265,45 @@ def contour_proposals(image: np.ndarray, config: ResolverConfig) -> list[Proposa
         kind = "row" if aspect >= 3.2 and height * 0.035 <= h <= height * 0.20 else "component"
         proposals.append(Proposal(kind, (x, y, w, h), round(float(score), 4)))
 
+    return proposals
+
+
+def weak_control_proposals(image: np.ndarray, config: ResolverConfig) -> list[Proposal]:
+    """Propose low-contrast, text-free controls (toggles, hollow icons).
+
+    The main Canny pass misses controls that are only a few gray levels away
+    from the page background. This pass uses a low edge threshold plus tight
+    size/shape gating so it recovers such controls without flooding the
+    candidate set with text strokes or noise.
+    """
+
+    height, width = image.shape[:2]
+    image_area = width * height
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    edges = cv2.Canny(gray, 16, 48)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    proposals: list[Proposal] = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        area = w * h
+        if area < image_area * config.weak_control_min_area_ratio:
+            continue
+        if area > image_area * config.weak_control_max_area_ratio:
+            continue
+        aspect = max(w, h) / max(1, min(w, h))
+        if aspect > config.weak_control_max_aspect:
+            continue
+        contour_area = max(1.0, cv2.contourArea(contour))
+        fill = contour_area / max(1, area)
+        if fill < config.weak_control_min_fill:
+            continue
+        # Low-contrast controls are weaker than primary candidates, so they sort
+        # below strong text/icon blocks but above pure noise.
+        score = 0.42 + min(0.18, fill * 0.18)
+        proposals.append(Proposal("component", (x, y, w, h), round(float(score), 4)))
     return proposals
 
 
@@ -143,6 +345,53 @@ def row_band_proposals(image: np.ndarray) -> list[Proposal]:
                 Proposal("row", (margin, top, width - margin * 2, band_height), 0.58)
             )
     return proposals
+
+
+def media_center_proposal(region: MediaRegion) -> Proposal:
+    """Keep exactly one safe tap target for the media surface itself."""
+
+    x, y, w, h = region.bbox
+    side = max(24, round(min(w, h) * 0.10))
+    cx, cy = box_center(region.bbox)
+    bbox = (round(cx - side / 2), round(cy - side / 2), side, side)
+    return Proposal("media-center", bbox, 0.5)
+
+
+def filter_proposals_by_media(
+    proposals: list[Proposal], regions: list[MediaRegion], config: ResolverConfig, image_area: int
+) -> list[Proposal]:
+    """Drop proposals that are just texture inside a media region.
+
+    Kept: anything outside media, small overlay controls on media, and one
+    explicit media-center target per region. Rows are layout structure and are
+    not suppressed here; the row generator is a separate path.
+    """
+
+    if not regions:
+        return proposals
+    kept: list[Proposal] = []
+    for proposal in proposals:
+        if proposal.kind == "row":
+            kept.append(proposal)
+            continue
+        inside_region: MediaRegion | None = None
+        for region in regions:
+            inter = box_intersection(proposal.bbox, region.bbox)
+            area = proposal.bbox[2] * proposal.bbox[3]
+            if area and inter / area >= 0.7:
+                inside_region = region
+                break
+        if inside_region is None:
+            kept.append(proposal)
+            continue
+        if is_media_card(proposal, config, image_area):
+            kept.append(proposal)
+            continue
+        if is_media_overlay(proposal, inside_region, config, image_area):
+            kept.append(proposal)
+    for region in regions:
+        kept.append(media_center_proposal(region))
+    return kept
 
 
 def deduplicate_proposals(proposals: list[Proposal], limit: int) -> list[Proposal]:
@@ -219,6 +468,10 @@ def refine_component(
         proposal.bbox, image_width, image_height, config.proposal_pad_ratio
     )
     crop = image[crop_y : crop_y + crop_h, crop_x : crop_x + crop_w].copy()
+    if proposal.kind == "media-center":
+        # The media surface is a valid tap target but needs no segmentation.
+        mask = np.full((h, w), 255, np.uint8)
+        return mask, proposal.bbox, "media-center"
     rect_x = max(1, x - crop_x)
     rect_y = max(1, y - crop_y)
     rect_w = min(w, crop_w - rect_x - 1)
@@ -340,11 +593,22 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
     analysis, scale = resize_for_analysis(source, config.max_side)
     resized = perf_counter()
 
-    proposals = deduplicate_proposals(
-        contour_proposals(analysis, config) + row_band_proposals(analysis),
-        config.max_blocks,
-    )
+    raw_proposals = contour_proposals(analysis, config) + row_band_proposals(analysis)
+    if config.weak_control_detection:
+        raw_proposals = raw_proposals + weak_control_proposals(analysis, config)
+    proposals = deduplicate_proposals(raw_proposals, config.max_blocks)
     proposed = perf_counter()
+
+    media_regions: list[MediaRegion] = []
+    if config.media_suppression:
+        media_regions = detect_media_regions(analysis, config)
+        proposals = deduplicate_proposals(
+            filter_proposals_by_media(
+                proposals, media_regions, config, analysis.shape[0] * analysis.shape[1]
+            ),
+            config.max_blocks,
+        )
+    media_done = perf_counter()
     blocks: list[dict[str, Any]] = []
     masks: dict[str, tuple[np.ndarray, tuple[int, int, int, int]]] = {}
 
@@ -374,6 +638,16 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
     root_block_ids = assign_block_hierarchy(blocks)
     refined = perf_counter()
 
+    media_payload = [
+        {
+            "bbox": list(region.bbox),
+            "areaRatio": region.area_ratio,
+            "edgeDensity": region.edge_density,
+            "saturationMean": region.saturation_mean,
+        }
+        for region in media_regions
+    ]
+
     return {
         "schemaVersion": "visual-tap-blocks.v0",
         "effect": "none",
@@ -392,11 +666,13 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
         "config": asdict(config),
         "blocks": blocks,
         "rootBlockIds": root_block_ids,
+        "mediaRegions": media_payload,
         "timingMs": {
             "decode": round((decoded - started) * 1000, 3),
             "resize": round((resized - decoded) * 1000, 3),
             "proposals": round((proposed - resized) * 1000, 3),
-            "refine": round((refined - proposed) * 1000, 3),
+            "mediaSuppress": round((media_done - proposed) * 1000, 3),
+            "refine": round((refined - media_done) * 1000, 3),
             "total": round((refined - started) * 1000, 3),
         },
         "_source": source,

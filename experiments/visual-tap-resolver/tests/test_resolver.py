@@ -16,11 +16,13 @@ sys.path.insert(0, str(ROOT))
 from resolver import (  # noqa: E402
     ResolverConfig,
     box_iou,
+    detect_media_regions,
     resize_for_analysis,
     resolve_image,
     safe_point,
     source_box,
     source_point,
+    weak_control_proposals,
 )
 from visual_tap_demo import synthetic_command  # noqa: E402
 
@@ -97,6 +99,34 @@ class DeterminismTests(unittest.TestCase):
 
 
 class SyntheticIntegrationTests(unittest.TestCase):
+    def test_weak_control_detection_finds_low_contrast_toggle(self) -> None:
+        # A light-gray toggle on a near-white card produces almost no strong
+        # Canny edges; the weak-control pass must still surface it. Use a
+        # phone-like frame so the toggle's area ratio matches a real screenshot.
+        image = np.full((1280, 576, 3), 252, np.uint8)
+        cv2.rectangle(image, (40, 40), (536, 1240), (255, 255, 255), -1)  # card
+        track = (232, 232, 232)
+        tx, ty = 440, 1000
+        cv2.rectangle(image, (tx, ty), (tx + 78, ty + 34), track, 2)      # track
+        cv2.circle(image, (tx + 20, ty + 17), 15, track, -1)              # knob
+        proposals = weak_control_proposals(image, ResolverConfig())
+        cx, cy = tx + 39, ty + 17
+        hit = any(
+            abs(p.bbox[0] + p.bbox[2] / 2 - cx) < 45 and abs(p.bbox[1] + p.bbox[3] / 2 - cy) < 35
+            for p in proposals
+        )
+        self.assertTrue(hit, "weak-control pass missed the low-contrast toggle")
+
+    def test_media_region_detected_for_large_textured_area(self) -> None:
+        rng = np.random.default_rng(3)
+        image = np.full((400, 240, 3), 245, np.uint8)
+        # busy photo occupies most of the frame
+        photo = rng.integers(40, 220, (260, 240, 3), dtype=np.uint8)
+        image[110:370, :, :] = photo
+        regions = detect_media_regions(image, ResolverConfig())
+        self.assertTrue(regions, "no media region detected for a large photo")
+        self.assertGreaterEqual(regions[0].area_ratio, 0.4)
+
     def test_every_list_row_has_a_safe_row_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
