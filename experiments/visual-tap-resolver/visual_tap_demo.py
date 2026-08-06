@@ -127,7 +127,7 @@ def parser() -> argparse.ArgumentParser:
     resolve.add_argument("--input", required=True)
     resolve.add_argument("--output-dir", required=True)
     resolve.add_argument("--max-side", type=int, default=1280)
-    resolve.add_argument("--max-blocks", type=int, default=160)
+    resolve.add_argument("--max-blocks", type=int, default=256)
     resolve.add_argument("--write-masks", action="store_true")
     resolve.set_defaults(func=resolve_command)
 
@@ -135,7 +135,7 @@ def parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--input", required=True)
     benchmark.add_argument("--iterations", type=int, default=20)
     benchmark.add_argument("--max-side", type=int, default=1280)
-    benchmark.add_argument("--max-blocks", type=int, default=160)
+    benchmark.add_argument("--max-blocks", type=int, default=256)
     benchmark.add_argument("--reference-dump-ms", type=float)
     benchmark.set_defaults(func=benchmark_command)
 

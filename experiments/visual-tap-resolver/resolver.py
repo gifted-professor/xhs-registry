@@ -24,7 +24,7 @@ class ResolverConfig:
     max_area_ratio: float = 0.18
     proposal_pad_ratio: float = 0.18
     grabcut_iterations: int = 3
-    max_blocks: int = 160
+    max_blocks: int = 256
 
 
 @dataclass(frozen=True)

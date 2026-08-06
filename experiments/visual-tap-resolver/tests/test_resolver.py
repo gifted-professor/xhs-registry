@@ -102,7 +102,7 @@ class SyntheticIntegrationTests(unittest.TestCase):
             output = Path(directory)
             synthetic_command(Namespace(output_dir=str(output)))
             truth = json.loads((output / "ground-truth.json").read_text(encoding="utf-8"))
-            result = resolve_image(output / "screen.png", ResolverConfig(max_blocks=160))
+            result = resolve_image(output / "screen.png", ResolverConfig(max_blocks=256))
             row_blocks = [block for block in result["blocks"] if block["kind"] == "row"]
             expected_rows = [region for region in truth["hitRegions"] if region["id"].startswith("row-")]
             self.assertEqual(len(expected_rows), 5)
