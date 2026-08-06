@@ -43,3 +43,4 @@ watchdog/launchd.err.log
 
 # 本地数据库（非源码）
 aionui-backend.db
+.venv-ocr/

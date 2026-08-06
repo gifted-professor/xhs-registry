@@ -9,7 +9,29 @@ from statistics import mean, median
 import cv2
 import numpy as np
 
-from resolver import ResolverConfig, render_overlay, resolve_image, serializable_result
+from resolver import (  # noqa: E402
+    ResolverConfig,
+    find_blocks_by_text,
+    get_ocr_engine,
+    render_overlay,
+    resolve_image,
+    serializable_result,
+)
+
+
+def build_config(args: argparse.Namespace) -> ResolverConfig:
+    """Build a config from CLI args, pre-warming the OCR engine when enabled so
+    the one-time model load is not attributed to the page resolve."""
+    enable_ocr = getattr(args, "ocr", False)
+    config = ResolverConfig(
+        max_side=args.max_side,
+        max_blocks=args.max_blocks,
+        enable_ocr=enable_ocr,
+    )
+    if enable_ocr:
+        engine = get_ocr_engine(config.ocr_lang)
+        object.__setattr__(config, "ocr_engine", engine)
+    return config
 
 
 def write_json(path: Path, value: object) -> None:
@@ -19,7 +41,7 @@ def write_json(path: Path, value: object) -> None:
 def resolve_command(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    config = ResolverConfig(max_side=args.max_side, max_blocks=args.max_blocks)
+    config = build_config(args)
     result = resolve_image(Path(args.input), config)
     serializable = serializable_result(result)
     write_json(output_dir / "blocks.json", serializable)
@@ -36,6 +58,9 @@ def resolve_command(args: argparse.Namespace) -> int:
         masks_dir.mkdir(exist_ok=True)
         for block_id, (mask, _) in result["_masks"].items():
             cv2.imwrite(str(masks_dir / f"{block_id}.png"), mask)
+    if args.json:
+        print(json.dumps(serializable, ensure_ascii=False))
+        return 0
     print(f"BLOCKS={len(result['blocks'])}")
     print(f"ROOT_BLOCKS={len(root_blocks)}")
     print(f"TOTAL_MS={result['timingMs']['total']}")
@@ -43,6 +68,34 @@ def resolve_command(args: argparse.Namespace) -> int:
     print(f"OVERLAY={output_dir / 'overlay.png'}")
     print(f"OVERLAY_ALL={output_dir / 'overlay-all.png'}")
     return 0
+
+
+def find_command(args: argparse.Namespace) -> int:
+    """Resolve a screenshot then find blocks by text; never emits a tap."""
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config = build_config(args)
+    result = resolve_image(Path(args.input), config)
+    matches = find_blocks_by_text(result, args.text)
+    payload = {
+        "input": serializable_result(result)["input"],
+        "query": args.text,
+        "matchCount": len(matches),
+        "matches": matches,
+    }
+    write_json(output_dir / "find.json", payload)
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False))
+    else:
+        print(f"QUERY={args.text}")
+        print(f"MATCHES={len(matches)}")
+        for match in matches:
+            print(
+                f"  {match['blockId']} [{match['kind']}] {match['sourceSafePoint']} "
+                f"text={match['text']!r}"
+            )
+        print(f"JSON={output_dir / 'find.json'}")
+    return 0 if matches else 1
 
 
 def benchmark_command(args: argparse.Namespace) -> int:
@@ -128,8 +181,20 @@ def parser() -> argparse.ArgumentParser:
     resolve.add_argument("--output-dir", required=True)
     resolve.add_argument("--max-side", type=int, default=1280)
     resolve.add_argument("--max-blocks", type=int, default=256)
+    resolve.add_argument("--ocr", action="store_true", help="run the OCR text pass")
+    resolve.add_argument("--json", action="store_true", help="print blocks JSON to stdout")
     resolve.add_argument("--write-masks", action="store_true")
     resolve.set_defaults(func=resolve_command)
+
+    find = subparsers.add_parser("find", help="resolve then find blocks by text (no tap)")
+    find.add_argument("--input", required=True)
+    find.add_argument("--output-dir", required=True)
+    find.add_argument("--text", required=True, help="substring to match in OCR text")
+    find.add_argument("--max-side", type=int, default=1280)
+    find.add_argument("--max-blocks", type=int, default=256)
+    find.add_argument("--ocr", action="store_true", help="run the OCR text pass")
+    find.add_argument("--json", action="store_true", help="print find JSON to stdout")
+    find.set_defaults(func=find_command)
 
     benchmark = subparsers.add_parser("benchmark", help="benchmark local resolve only")
     benchmark.add_argument("--input", required=True)

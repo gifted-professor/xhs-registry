@@ -46,6 +46,12 @@ class ResolverConfig:
     weak_control_max_area_ratio: float = 0.012
     weak_control_max_aspect: float = 3.2
     weak_control_min_fill: float = 0.45
+    # Optional OCR pass. Off by default: it adds a heavy one-time model load and
+    # a per-page inference cost, so it is enabled only when geometric candidates
+    # lack text semantics (no-dump fallback). OCR supplies text boxes and labels;
+    # it never replaces the resolver's own coordinate geometry.
+    enable_ocr: bool = False
+    ocr_lang: str = "ch"
 
 
 @dataclass(frozen=True)
@@ -472,6 +478,12 @@ def refine_component(
         # The media surface is a valid tap target but needs no segmentation.
         mask = np.full((h, w), 255, np.uint8)
         return mask, proposal.bbox, "media-center"
+    if proposal.kind == "text":
+        # Keep the full OCR text box. Running GrabCut on text tightens the mask
+        # to a single glyph, which makes the safe point unstable; the whole box
+        # is the tappable unit.
+        mask = np.full((h, w), 255, np.uint8)
+        return mask, proposal.bbox, "text-box"
     rect_x = max(1, x - crop_x)
     rect_y = max(1, y - crop_y)
     rect_w = min(w, crop_w - rect_x - 1)
@@ -582,6 +594,53 @@ def assign_block_hierarchy(blocks: list[dict[str, Any]]) -> list[str]:
     return [block["blockId"] for block in blocks if "parentBlockId" not in block]
 
 
+_OCR_ENGINES: dict[str, Any] = {}
+
+
+def get_ocr_engine(lang: str, engine: Any = None) -> Any:
+    """Reuse one PaddleOCR engine per language; model load dominates cost.
+
+    A caller that already built an engine (e.g. the CLI so it can time the load
+    separately) can pass it in and it becomes the cached instance.
+    """
+
+    if engine is not None:
+        _OCR_ENGINES[lang] = engine
+    if lang not in _OCR_ENGINES:
+        from ocr_integration import OcrEngine
+
+        _OCR_ENGINES[lang] = OcrEngine(lang=lang)
+    return _OCR_ENGINES[lang]
+
+
+def find_blocks_by_text(result: dict[str, Any], query: str) -> list[dict[str, Any]]:
+    """Return blocks whose OCR text contains the query (substring match).
+
+    Read-only lookup over a resolved result; never emits a tap. Each match keeps
+    the resolver-computed ``sourceSafePoint`` so a caller can resolve
+    "tap <text>" to a blockId and its physical point without any LLM guessing.
+    """
+
+    query = query.strip()
+    if not query:
+        return []
+    matches = []
+    for block in result.get("blocks", []):
+        text = block.get("text")
+        if text and query in text:
+            matches.append(
+                {
+                    "blockId": block["blockId"],
+                    "kind": block["kind"],
+                    "text": text,
+                    "sourceBBox": block["sourceBBox"],
+                    "sourceSafePoint": block["sourceSafePoint"],
+                    "confidence": block["proposalScore"],
+                }
+            )
+    return matches
+
+
 def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str, Any]:
     config = config or ResolverConfig()
     started = perf_counter()
@@ -609,6 +668,27 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
             config.max_blocks,
         )
     media_done = perf_counter()
+
+    # Optional OCR pass: text boxes become text candidates and label any
+    # overlapping geometric block. Runs after media suppression so OCR text on
+    # the media surface is not treated as a texture candidate, and so OCR can
+    # annotate the surviving UI blocks.
+    ocr_boxes: list[Any] = []
+    if config.enable_ocr:
+        from ocr_integration import text_proposals
+
+        engine = get_ocr_engine(config.ocr_lang, getattr(config, "ocr_engine", None))
+        ocr_boxes = engine.detect(analysis)
+        proposals = deduplicate_proposals(
+            proposals + text_proposals(ocr_boxes), config.max_blocks
+        )
+    ocr_done = perf_counter()
+
+    # Map each OCR box to the block index that contains its center, for labels.
+    text_by_center: list[tuple[int, int, str]] = [
+        (b.bbox[0] + b.bbox[2] // 2, b.bbox[1] + b.bbox[3] // 2, b.text) for b in ocr_boxes
+    ]
+
     blocks: list[dict[str, Any]] = []
     masks: dict[str, tuple[np.ndarray, tuple[int, int, int, int]]] = {}
 
@@ -628,7 +708,27 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
             "maskArea": int(cv2.countNonZero(mask)),
             "_mask": mask,
         }
+        if proposal.kind == "text":
+            # Label a text block with the OCR string whose center it contains.
+            bx, by, bw, bh = proposal.bbox
+            block["text"] = next(
+                (t for cx, cy, t in text_by_center if bx <= cx < bx + bw and by <= cy < by + bh),
+                None,
+            )
         blocks.append(block)
+
+    # Annotate non-text blocks with any OCR text whose center they contain.
+    if ocr_boxes:
+        for block in blocks:
+            if block["kind"] == "text":
+                continue
+            bx, by, bw, bh = (int(v) for v in block["analysisBBox"])
+            label = next(
+                (t for cx, cy, t in text_by_center if bx <= cx < bx + bw and by <= cy < by + bh),
+                None,
+            )
+            if label:
+                block["text"] = label
 
     blocks.sort(key=lambda item: (item["sourceSafePoint"][1], item["sourceSafePoint"][0], item["kind"]))
     for index, block in enumerate(blocks, start=1):
@@ -672,7 +772,8 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
             "resize": round((resized - decoded) * 1000, 3),
             "proposals": round((proposed - resized) * 1000, 3),
             "mediaSuppress": round((media_done - proposed) * 1000, 3),
-            "refine": round((refined - media_done) * 1000, 3),
+            "ocr": round((ocr_done - media_done) * 1000, 3),
+            "refine": round((refined - ocr_done) * 1000, 3),
             "total": round((refined - started) * 1000, 3),
         },
         "_source": source,
