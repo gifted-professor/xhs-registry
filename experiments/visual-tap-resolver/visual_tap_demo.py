@@ -17,6 +17,21 @@ from resolver import (  # noqa: E402
     resolve_image,
     serializable_result,
 )
+from vision_contract import (  # noqa: E402
+    build_vision_pack,
+    file_sha256,
+    validate_vision_decision,
+    vision_prompt,
+)
+
+
+MAX_BLOCKS_JSON_BYTES = 16 * 1024 * 1024
+MAX_PACK_JSON_BYTES = 4 * 1024 * 1024
+MAX_DECISION_JSON_BYTES = 64 * 1024
+
+
+class StrictJsonError(ValueError):
+    """A bounded JSON input could not be decoded unambiguously."""
 
 
 def build_config(args: argparse.Namespace) -> ResolverConfig:
@@ -36,6 +51,33 @@ def build_config(args: argparse.Namespace) -> ResolverConfig:
 
 def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+
+def read_json_strict(path: Path, *, max_bytes: int) -> object:
+    with path.open("rb") as source:
+        raw = source.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise StrictJsonError(
+            f"JSON input exceeds {max_bytes} byte limit: {path.name}"
+        )
+    try:
+        return json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+        )
+    except (UnicodeError, ValueError, RecursionError) as error:
+        raise StrictJsonError(
+            f"invalid strict JSON input {path.name}: {error}"
+        ) from error
 
 
 def resolve_command(args: argparse.Namespace) -> int:
@@ -77,8 +119,12 @@ def find_command(args: argparse.Namespace) -> int:
     config = build_config(args)
     result = resolve_image(Path(args.input), config)
     matches = find_blocks_by_text(result, args.text)
+    serializable = serializable_result(result)
     payload = {
-        "input": serializable_result(result)["input"],
+        "schemaVersion": "visual-tap-find.v1",
+        "effect": "none",
+        "input": serializable["input"],
+        "transform": serializable["transform"],
         "query": args.text,
         "matchCount": len(matches),
         "matches": matches,
@@ -96,6 +142,98 @@ def find_command(args: argparse.Namespace) -> int:
             )
         print(f"JSON={output_dir / 'find.json'}")
     return 0 if matches else 1
+
+
+def vision_pack_command(args: argparse.Namespace) -> int:
+    """Generate a frame/query/manifest-bound pack for a block-only Vision call."""
+
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config = build_config(args)
+    result = resolve_image(Path(args.input), config)
+    serializable = serializable_result(result)
+    write_json(output_dir / "blocks.json", serializable)
+
+    primary_path = output_dir / "vision-overlay-all.png"
+    if not cv2.imwrite(str(primary_path), render_overlay(result["_source"], result["blocks"])):
+        raise OSError(f"unable to write overlay: {primary_path}")
+
+    primary_overlay = {
+        "file": primary_path.name,
+        "sha256": file_sha256(primary_path),
+        "visibleBlockIds": [block["blockId"] for block in result["blocks"]],
+    }
+    pack = build_vision_pack(
+        serializable,
+        args.query,
+        primary_overlay=primary_overlay,
+    )
+    write_json(output_dir / "vision-pack.json", pack)
+    (output_dir / "vision-prompt.txt").write_text(
+        vision_prompt(pack) + "\n", encoding="utf-8", newline="\n"
+    )
+
+    if args.json:
+        print(json.dumps(pack, ensure_ascii=False))
+    else:
+        print(f"FRAME_ID={pack['frame']['frameId']}")
+        print(f"MANIFEST_ID={pack['manifestId']}")
+        print(f"SELECTION_REQUEST_ID={pack['selectionRequestId']}")
+        print(f"CANDIDATES={pack['candidateCount']}")
+        print(f"PACK={output_dir / 'vision-pack.json'}")
+        print(f"PROMPT={output_dir / 'vision-prompt.txt'}")
+        print(f"OVERLAY={primary_path}")
+    return 0
+
+
+def select_command(args: argparse.Namespace) -> int:
+    """Validate one block-only Vision decision; never emits or performs a tap."""
+
+    output_path = Path(args.output).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        blocks = read_json_strict(
+            Path(args.blocks), max_bytes=MAX_BLOCKS_JSON_BYTES
+        )
+        pack = read_json_strict(Path(args.pack), max_bytes=MAX_PACK_JSON_BYTES)
+        decision = read_json_strict(
+            Path(args.decision), max_bytes=MAX_DECISION_JSON_BYTES
+        )
+    except (OSError, StrictJsonError) as error:
+        payload = {
+            "schemaVersion": "visual-tap-verified-point.v1",
+            "effect": "none",
+            "ok": False,
+            "tapAuthorized": False,
+            "error": {"code": "INPUT_READ_FAILED", "message": str(error)},
+        }
+        write_json(output_path, payload)
+        print(json.dumps(payload, ensure_ascii=False))
+        return 2
+
+    payload = validate_vision_decision(
+        blocks,
+        pack,
+        decision,
+        Path(args.input),
+        Path(args.overlay),
+        Path(args.prompt),
+        min_confidence=args.min_confidence,
+    )
+    write_json(output_path, payload)
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False))
+    elif payload["ok"]:
+        resolved = payload["resolved"]
+        print(f"BLOCK_ID={resolved['blockId']}")
+        print(f"SOURCE_SAFE_POINT={resolved['sourceSafePoint']}")
+        print("EFFECT=none")
+        print("TAP_AUTHORIZED=no")
+        print(f"OUTPUT={output_path}")
+    else:
+        print(f"REJECTED={payload['error']['code']}")
+        print(f"OUTPUT={output_path}")
+    return 0 if payload["ok"] else 2
 
 
 def benchmark_command(args: argparse.Namespace) -> int:
@@ -195,6 +333,32 @@ def parser() -> argparse.ArgumentParser:
     find.add_argument("--ocr", action="store_true", help="run the OCR text pass")
     find.add_argument("--json", action="store_true", help="print find JSON to stdout")
     find.set_defaults(func=find_command)
+
+    vision_pack = subparsers.add_parser(
+        "vision-pack", help="create an annotated, frame-bound block-selection pack"
+    )
+    vision_pack.add_argument("--input", required=True)
+    vision_pack.add_argument("--output-dir", required=True)
+    vision_pack.add_argument("--query", required=True, help="natural-language target for Vision")
+    vision_pack.add_argument("--max-side", type=int, default=1280)
+    vision_pack.add_argument("--max-blocks", type=int, default=256)
+    vision_pack.add_argument("--ocr", action="store_true", help="include OCR labels before Vision")
+    vision_pack.add_argument("--json", action="store_true", help="print pack JSON to stdout")
+    vision_pack.set_defaults(func=vision_pack_command)
+
+    select = subparsers.add_parser(
+        "select", help="validate a block-only Vision decision against the current frame"
+    )
+    select.add_argument("--input", required=True, help="current screenshot; SHA must still match")
+    select.add_argument("--blocks", required=True)
+    select.add_argument("--pack", required=True)
+    select.add_argument("--overlay", required=True, help="the exact primary overlay shown to Vision")
+    select.add_argument("--prompt", required=True, help="the exact prompt sent with the overlay")
+    select.add_argument("--decision", required=True)
+    select.add_argument("--output", required=True)
+    select.add_argument("--min-confidence", type=float, default=0.8)
+    select.add_argument("--json", action="store_true")
+    select.set_defaults(func=select_command)
 
     benchmark = subparsers.add_parser("benchmark", help="benchmark local resolve only")
     benchmark.add_argument("--input", required=True)

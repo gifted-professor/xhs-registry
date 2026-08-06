@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from hashlib import sha256
+from math import ceil, floor
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -75,6 +76,24 @@ def image_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def decode_source_image(path: Path) -> tuple[np.ndarray, str]:
+    """Read, hash, and decode one immutable byte snapshot of ``path``.
+
+    Reading the bytes once is part of the coordinate safety contract: the
+    returned SHA must describe the exact pixels used to calculate every block
+    and safe point. Hashing the path again after decoding would allow a file
+    replacement race to bind coordinates from frame A to the SHA of frame B.
+    """
+
+    encoded_bytes = path.read_bytes()
+    digest = sha256(encoded_bytes).hexdigest()
+    encoded = np.frombuffer(encoded_bytes, dtype=np.uint8)
+    source = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+    if source is None:
+        raise ValueError(f"unable to decode image: {path}")
+    return source, digest
 
 
 def resize_for_analysis(image: np.ndarray, max_side: int) -> tuple[np.ndarray, float]:
@@ -553,20 +572,45 @@ def safe_point(mask: np.ndarray, bbox: tuple[int, int, int, int]) -> tuple[int, 
     return x + int(best_x), y + int(best_y), maximum
 
 
-def source_box(box: tuple[int, int, int, int], scale: float, width: int, height: int) -> list[int]:
+def _axis_scales(scale: float | tuple[float, float]) -> tuple[float, float]:
+    if isinstance(scale, tuple):
+        return scale
+    return scale, scale
+
+
+def source_box(
+    box: tuple[int, int, int, int],
+    scale: float | tuple[float, float],
+    width: int,
+    height: int,
+) -> list[int]:
     x, y, w, h = box
-    x1 = min(width - 1, max(0, round(x / scale)))
-    y1 = min(height - 1, max(0, round(y / scale)))
-    x2 = min(width, max(x1 + 1, round((x + w) / scale)))
-    y2 = min(height, max(y1 + 1, round((y + h) / scale)))
+    scale_x, scale_y = _axis_scales(scale)
+    # Bounding boxes describe pixel edges, so map their half-open interval with
+    # floor/ceil to conservatively contain every contributing source pixel.
+    x1 = min(width - 1, max(0, floor(x / scale_x)))
+    y1 = min(height - 1, max(0, floor(y / scale_y)))
+    x2 = min(width, max(x1 + 1, ceil((x + w) / scale_x)))
+    y2 = min(height, max(y1 + 1, ceil((y + h) / scale_y)))
     return [x1, y1, x2 - x1, y2 - y1]
 
 
-def source_point(point: tuple[int, int], scale: float, width: int, height: int) -> list[int]:
+def source_point(
+    point: tuple[int, int],
+    scale: float | tuple[float, float],
+    width: int,
+    height: int,
+) -> list[int]:
     x, y = point
+    scale_x, scale_y = _axis_scales(scale)
+    # OpenCV resize maps pixel centers rather than pixel-edge indices. Applying
+    # x/scale directly biases every point toward the top-left, increasingly so
+    # at aggressive downscales.
+    source_x = (x + 0.5) / scale_x - 0.5
+    source_y = (y + 0.5) / scale_y - 0.5
     return [
-        min(width - 1, max(0, round(x / scale))),
-        min(height - 1, max(0, round(y / scale))),
+        min(width - 1, max(0, round(source_x))),
+        min(height - 1, max(0, round(source_y))),
     ]
 
 
@@ -644,12 +688,13 @@ def find_blocks_by_text(result: dict[str, Any], query: str) -> list[dict[str, An
 def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str, Any]:
     config = config or ResolverConfig()
     started = perf_counter()
-    source = cv2.imread(str(path), cv2.IMREAD_COLOR)
-    if source is None:
-        raise ValueError(f"unable to decode image: {path}")
+    source, source_sha = decode_source_image(path)
     decoded = perf_counter()
     source_height, source_width = source.shape[:2]
-    analysis, scale = resize_for_analysis(source, config.max_side)
+    analysis, _nominal_scale = resize_for_analysis(source, config.max_side)
+    scale_x = analysis.shape[1] / source_width
+    scale_y = analysis.shape[0] / source_height
+    source_scales = (scale_x, scale_y)
     resized = perf_counter()
 
     raw_proposals = contour_proposals(analysis, config) + row_band_proposals(analysis)
@@ -701,10 +746,10 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
             "proposalScore": proposal.score,
             "analysisBBox": list(proposal.bbox),
             "analysisMaskBBox": list(mask_box),
-            "sourceBBox": source_box(mask_box, scale, source_width, source_height),
+            "sourceBBox": source_box(mask_box, source_scales, source_width, source_height),
             "analysisSafePoint": [px, py],
-            "sourceSafePoint": source_point((px, py), scale, source_width, source_height),
-            "safeClearancePx": round(clearance / scale, 2),
+            "sourceSafePoint": source_point((px, py), source_scales, source_width, source_height),
+            "safeClearancePx": round(clearance / max(source_scales), 2),
             "maskArea": int(cv2.countNonZero(mask)),
             "_mask": mask,
         }
@@ -753,13 +798,16 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
         "effect": "none",
         "input": {
             "path": str(path.resolve()),
-            "sha256": image_sha256(path),
+            "sha256": source_sha,
+            "frameId": f"sha256:{source_sha}",
+            "coordinateSpace": "source-image-pixels",
             "sourceResolution": [source_width, source_height],
             "analysisResolution": [analysis.shape[1], analysis.shape[0]],
         },
         "transform": {
-            "kind": "uniform-scale",
-            "analysisToSourceScale": round(1.0 / scale, 8),
+            "kind": "axis-scale",
+            "analysisToSourceScale": [round(1.0 / scale_x, 8), round(1.0 / scale_y, 8)],
+            "pixelCenterConvention": "source=(analysis+0.5)/scale-0.5",
             "cropOffset": [0, 0],
             "padding": [0, 0],
         },

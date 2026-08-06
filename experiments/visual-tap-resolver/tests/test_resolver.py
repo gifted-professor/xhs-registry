@@ -65,7 +65,10 @@ class CoordinateTransformTests(unittest.TestCase):
         resized, scale = resize_for_analysis(image, 1280)
         self.assertEqual((resized.shape[1], resized.shape[0]), (576, 1280))
         original = [731, 1819]
-        analysis = [round(original[0] * scale), round(original[1] * scale)]
+        analysis = [
+            round((original[0] + 0.5) * scale - 0.5),
+            round((original[1] + 0.5) * scale - 0.5),
+        ]
         restored = source_point(tuple(analysis), scale, 1080, 2400)
         self.assertLessEqual(abs(restored[0] - original[0]), 1)
         self.assertLessEqual(abs(restored[1] - original[1]), 1)
@@ -77,6 +80,22 @@ class CoordinateTransformTests(unittest.TestCase):
         self.assertGreaterEqual(y, 0)
         self.assertLessEqual(x + width, 1080)
         self.assertLessEqual(y + height, 2400)
+
+    def test_odd_resolution_uses_effective_axis_scales(self) -> None:
+        image = np.zeros((2532, 1170, 3), np.uint8)
+        resized, _ = resize_for_analysis(image, 1280)
+        scales = (resized.shape[1] / 1170, resized.shape[0] / 2532)
+        original = [680, 1901]
+        analysis = [
+            round((original[0] + 0.5) * scales[0] - 0.5),
+            round((original[1] + 0.5) * scales[1] - 0.5),
+        ]
+        restored = source_point(tuple(analysis), scales, 1170, 2532)
+        self.assertLessEqual(abs(restored[0] - original[0]), 1)
+        self.assertLessEqual(abs(restored[1] - original[1]), 1)
+
+    def test_aggressive_downscale_maps_pixel_centers_not_edges(self) -> None:
+        self.assertEqual(source_point((5, 5), 0.1, 100, 100), [54, 54])
 
 
 class DeterminismTests(unittest.TestCase):
