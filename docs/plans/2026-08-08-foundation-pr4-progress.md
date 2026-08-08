@@ -11,8 +11,10 @@
 - [x] `foundation-pr4.files.json`（Gate A/B 授权机读）
 - [x] Bridge review `20260808-235037-9081d5e7`（P1 回滚锚点 / P2 fetch·GO 语义）
 - [x] 交互实测加厚 2026-08-09（控制面 down、CRLF、双仓缺对象、`requireMainOrigin` vs feature 分支）→ **已补进 plan/baseline/files.json**
+- [x] PR4-0 docs 提交 `e0db476`（`foundation/pr4-deploy-shadow`）
+- [x] PR4-1 DeployShadow **runbook Draft**（`2026-08-08-foundation-pr4-runbook.md`；fetch/对齐、备份锚点、git-show LF 部署、GO 探针、回滚 D0/D1）
 - [ ] routing 仓对称指针（PR4-1 前补）
-- [ ] 文档切到 `foundation/pr4-deploy-shadow` 再提交（待人批 commit）
+- [ ] **人审 runbook Draft** → 之后才谈闸 A 执行
 
 ## 未做（红线）
 
@@ -23,7 +25,7 @@
 
 ## 下一步
 
-1. 人审收口后的计划 → **PR4-1 runbook Draft**（fetch、CRLF 探针、回滚 vs `requireMainOrigin`、控制面 precondition）
+1. **人审 PR4-1 runbook Draft**（含决策点 D0 控制面恢复 / D1 回滚 `requireMainOrigin` 取舍、`windowsRegistryCommit` 收口）
 2. 恢复控制面并重采 baseline liveness 后，人显式批 **闸 A** 才 DeployShadow
 
 ## 取消

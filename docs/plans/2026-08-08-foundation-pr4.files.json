@@ -71,10 +71,11 @@
         "docs/plans/2026-08-08-foundation-pr4-baseline.md",
         "docs/plans/2026-08-08-foundation-pr4.files.json",
         "docs/plans/2026-08-08-foundation-pr4-progress.md",
+        "docs/plans/2026-08-08-foundation-pr4-runbook.md",
         "HANDOFF-2026-08-08-foundation-pr4-gate.md",
         "PROGRESS.md"
       ],
-      "notes": "Commit docs on branch foundation/pr4-deploy-shadow (create from main/tip); do not leave untracked on foundation/pr2-wiring-closure. Probe #10 must LF-normalize vs git blob."
+      "notes": "PR4-1 runbook Draft written 2026-08-09 (fetch/align, backup, git-show LF deploy, GO probes, rollback D0/D1). Execution still 0 live until Gate A. Commit docs on foundation/pr4-deploy-shadow; Probe #10 must LF-normalize vs git blob."
     }
   }
 }
