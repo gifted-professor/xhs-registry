@@ -1,15 +1,32 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-08 Foundation PR2 **wiring closure** 源码补丁待 review（未部署）
+> 最后更新：2026-08-09 Foundation PR4 计划 **review findings 已收口** · Not deployed · Pilot inactive · 控制面曾实测 down
 
-## 2026-08-08 Foundation PR2 wiring closure（post-merge hotfix）
+## 2026-08-08/09 Foundation PR4 计划 Draft（PR4-0 · review 收口）
 
-**问题**：PR2/PR3 已合入 main，但 Orchestrator 仍可裸跑 Raw TaskPlan、assignment 未带 `boundNode`、Worker 仍本地判权、Receipt v2 未接线、单边 hash 可 fail-open。
+**状态**：plan / baseline / `foundation-pr4.files.json` 已按 bridge + 2026-08-09 实测加厚修订；**未** DeployShadow / reload / ActivatePilot。
 
-**动作**：分支 `foundation/pr2-wiring-closure` 强制 ExecutionPlan、boundNode assignment、Worker 单裁判、v2 receipt + notSent null jobIds、presence 对称、symlink/路径规范化、algorithm 传播；fake CP E2E 覆盖 normal/drift/resume。
+**目标 tip**：routing `fb7747feefd975ad14fdd51c3313b3487ae978ee` · registry `b1e5e70d3a53c8c1d119b078833e9066f8ccf107`。
 
-**证据**：见 `docs/plans/2026-08-08-foundation-pr2-wiring-closure.md`。  
-**红线**：0 Windows deploy · 0 Pilot · 不进 PR4 直至本补丁 review 通过。
+**live 基线**：旧 `rel-shadow-2026-08-02-repair-consumer-v1`；四层漂移（checkout `42b8964` @ feature ≠ pin `524c21e` ≠ 本地 origin/main ≠ GitHub tip）；2026-08-09 **17920 down**；registry.mjs CRLF≠blob LF。详见 `docs/plans/2026-08-08-foundation-pr4-baseline.md`。
+
+**收口要点**：回滚锚点=真实 checkout；双仓 fetch+cat-file；探针 #10 LF 归一化；GO≠wiring 已验；leases 禁真空变绿；`policyMode` 仅字面 `shadow`。
+
+**下一步**：PR4-1 runbook Draft → 恢复控制面 → **闸 A**；Pilot **闸 B** 另批。  
+**红线**：0 deploy/reload · 0 Pilot · 控制面 down 不开闸 A。
+
+## 2026-08-08 Foundation PR2 wiring + submit lock（已合 main）
+
+**问题**：PR2/PR3 合入后 integrity 未强制进执行路径；submit 缺 expected hash 原子锁。
+
+**已合**：
+- Registry [#6](https://github.com/gifted-professor/xhs-registry/pull/6) merge `b1e5e70`（ExecutionPlan 强制、stable operationKey、constraints、hash 重算、route allow+decisionId、v2 receipt、expected* 发送）
+- Routing [#43](https://github.com/gifted-professor/xhs-device-agent/pull/43) merge `fb7747f`（submit 内 expected* 原子比较；先合 routing 再合 registry）
+
+**交接**：`HANDOFF-2026-08-08-foundation-pr4-gate.md`  
+**证据**：`docs/plans/2026-08-08-foundation-pr2-wiring-closure.md`  
+**PR4 计划**：`docs/plans/2026-08-08-foundation-pr4-plan.md`  
+**红线**：仍 0 Windows deploy/reload · 0 Pilot，直至 PR4 闸 A/B 显式开闸。
 
 ## 2026-08-08 P1 live canary L1–L4（非支付；人授权：不碰支付可不请示）
 

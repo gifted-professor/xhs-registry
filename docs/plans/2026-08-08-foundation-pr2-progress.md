@@ -43,8 +43,8 @@
 - ~~Orchestrator / boundNode / Worker 本地判权 / Receipt v2 接线~~ → 见 `2026-08-08-foundation-pr2-wiring-closure.md`
 - live capabilities 挂真实 TCB（可选最小 xianyu prepare）仍非 merge prerequisite
 - Routing twin：对照补 contract presence / algorithm 传播（若尚未）
-- **PR4**：DeployShadow / Pilot — **禁止**，直至 wiring closure review 通过且明确开闸
+- **PR4**：DeployShadow / Pilot — **闸门已开**（wiring #6 + submit-lock #43 已合）；部署/Pilot 仍须 PR4 内显式开闸。交接：`HANDOFF-2026-08-08-foundation-pr4-gate.md`
 
 ## 红线仍守
 
-0 device I/O · 0 Windows service · 0 pilot（至 PR4）
+0 device I/O · 0 Windows service · 0 pilot（直至 PR4 DeployShadow / ActivatePilot 各自开闸）

@@ -1,0 +1,80 @@
+{
+  "schemaId": "xhs.foundation-pr4-scope.v1",
+  "title": "Foundation PR4: DeployShadow then (separate gate) ActivatePilot",
+  "branch": "foundation/pr4-deploy-shadow",
+  "status": "draft-plan-review-closed",
+  "baselines": {
+    "routingTarget": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+    "registryTarget": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+    "liveRoutingCheckout": "42b89640e5b2ecc20bc01bb22e68d26b787acd3f",
+    "liveRoutingBranch": "foundation/pr2-submit-integrity-lock",
+    "liveTaskLaunchCommit": "524c21e540e951d1174cbfecaca0049b3c4058c7",
+    "liveLocalRoutingOriginMain": "3b1c9ae",
+    "liveLocalRegistryOriginMain": "a305f59",
+    "liveRegistryWorkingTree": "6853d3bb5045b390c2081903307574d3e35b566d",
+    "liveCrossRepoDeviceAgentCommit": "1e1d7f6cc423c8b7176ebbba199a18bfea58a161",
+    "liveCrossRepoRegistryCommit": "446494ab7d03382b268ff973ac12951cb13fc4c6",
+    "liveCrossRepoWindowsRegistryCommit": "5e25df8e62b5a64f8ad4e86173b4975c013e18a1",
+    "liveReleaseId": "rel-shadow-2026-08-02-repair-consumer-v1",
+    "liveControlPlaneHealth20260809": "down",
+    "requireMainOrigin": true
+  },
+  "authorization": {
+    "sourceImplementation": true,
+    "writePlanDocs": true,
+    "windowsDeploy": false,
+    "controlPlaneReload": false,
+    "registryReload": false,
+    "deviceActions": false,
+    "jobOrSessionSubmit": false,
+    "activatePilot": false,
+    "realDeviceCanary": false
+  },
+  "gates": {
+    "A_DeployShadow": "explicit-human-go",
+    "B_ActivatePilot": "explicit-human-go-separate",
+    "preGateA_controlPlaneLiveness": "required"
+  },
+  "mergeOrder": ["routing", "registry"],
+  "policyModeExact": "shadow",
+  "forbiddenUntilGateA": [
+    "Windows task reload",
+    "DeployShadow execution",
+    "task-launch rewrite",
+    "cross-repo-release rewrite",
+    "registry.mjs SHA256 push to live",
+    "open Gate A while control plane down",
+    "treat registry-degraded leases=0 as green"
+  ],
+  "forbiddenUntilGateB": [
+    "ActivatePilot",
+    "non-empty pilotActors",
+    "non-empty pilotAliases",
+    "non-shadow policyMode",
+    "live canary",
+    "payment path",
+    "final commit"
+  ],
+  "repositories": {
+    "routing": {
+      "name": "xhs-device-agent",
+      "allowedPrefixes": [
+        "docs/plans/2026-08-08-foundation-pr4-deploy-shadow.md",
+        "docs/plans/2026-08-08-foundation-pr4-plan.md"
+      ],
+      "notes": "PR4-0 may be registry-only docs; add routing twin pointer before PR4-1 runbook. Fetch+cat-file fb7747f required before checkout."
+    },
+    "registry": {
+      "name": "xhs-registry",
+      "allowedPrefixes": [
+        "docs/plans/2026-08-08-foundation-pr4-plan.md",
+        "docs/plans/2026-08-08-foundation-pr4-baseline.md",
+        "docs/plans/2026-08-08-foundation-pr4.files.json",
+        "docs/plans/2026-08-08-foundation-pr4-progress.md",
+        "HANDOFF-2026-08-08-foundation-pr4-gate.md",
+        "PROGRESS.md"
+      ],
+      "notes": "Commit docs on branch foundation/pr4-deploy-shadow (create from main/tip); do not leave untracked on foundation/pr2-wiring-closure. Probe #10 must LF-normalize vs git blob."
+    }
+  }
+}
