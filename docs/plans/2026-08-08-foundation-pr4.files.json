@@ -2,7 +2,7 @@
   "schemaId": "xhs.foundation-pr4-scope.v1",
   "title": "Foundation PR4: DeployShadow then (separate gate) ActivatePilot",
   "branch": "foundation/pr4-deploy-shadow",
-  "status": "gate-b-p1-executed",
+  "status": "gate-b-p2-executed",
   "auditVersion": "2",
   "auditNote": "H-01 fix (PR #7 REQUEST CHANGES): expected (authorized) values and observed (post-deployment) values are now separate and immutable. Original authorized values recovered from git history (commit e0db476, files.json status=draft-plan-review-closed) and gate-A backup dir. Never overwrite authorizedBefore with observedAfter.",
   "authorizedBefore": {
@@ -60,6 +60,7 @@
       "probe9": "NO_TARGET",
       "probe9Reason": "29 capabilities have effect classes none/publish/reversible/social; no financial_commit capability to test against",
       "p1Jobs": "3/3 succeeded (device.list, xianyu.observe.snapshot, wechat.observe.probe on 01)",
+      "p2Jobs": "6/7 succeeded across 02/03/04 (02: device.list+snapshot+wechat.probe; 03: device.list+snapshot; 04: device.list). 1 env failure: xhs.observe.feed on 04 ADAPTER_HTTP_UNAVAILABLE (loopback 17896 unreachable; same device device.list ok → transport issue not capability/isolated-block). All approvalRequired=false externalEffect=false; 4/4 online quarantine=0; leases empty.",
       "backupDir": "backups/registry-activate-pilot-pr4-20260809-011332",
       "rollbackAnchorsSha256": "b57187f3ade38cb518325444f7bd8bf25ca401e98803c8e0c81ca9c9b1d477b6"
     }
@@ -77,7 +78,7 @@
   },
   "gates": {
     "A_DeployShadow": "executed-2026-08-09T00:49Z-go-probes-1-10-green",
-    "B_ActivatePilot": "executed-2026-08-09T01:15Z-go-probes-1-8-green-p1-3-jobs-succeeded",
+    "B_ActivatePilot": "executed-2026-08-09T01:15Z-go-probes-1-8-green-p1-3-succeeded-p2-6-of-7-succeeded-4-of-4-machines-covered",
     "preGateA_controlPlaneLiveness": "required",
     "B_evidenceConditional": "PR7-review-REQUEST-CHANGES-conditional-trust; all 7 findings closed in evidenceClosure (2026-08-09)"
   },

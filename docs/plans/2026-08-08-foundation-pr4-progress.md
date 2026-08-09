@@ -62,6 +62,25 @@
 - [x] 控制面 reload → health `{mode:nonpayment_v1, active:true, pilotOnly:true, pilotConfigured:true}`
 - [x] GO 探针 1–8 全绿（#9 支付无靶子，见发现 1）
 - [x] **P1**：01 上 `xiaowei.device.list` + `xianyu.observe.snapshot` + `wechat.observe.probe` → **3/3 succeeded**，全只读、evidence 落库（含截图 486KB）、restoration 正常、四台无 quarantine、activeLeases=0
+- [x] **P2**（人 checkpoint「现在开 P2」后）：按各设备能力白名单扩 4 台只读 observe → **6/7 succeeded**，4 台各 ≥1 成功，无新增 quarantine（详见 P2 块）
+
+### P2 结果（2026-08-09，扩 4 台只读 observe）
+
+提交方式：`devicectl job submit --actor claude-pilot-20260809 --alias <a> --physical-label rack-<a> --capability <cap>`，placement 需 `alias+physicalLabel` 双 selector（P1 即如此）。按设备 routing 白名单（`control.db devices.routing_json`）选取能力：
+
+| alias | capability | jobId | 结果 | evidence |
+|---|---|---|---|---|
+| 02 | `xiaowei.device.list` | job_562614ab | ✅ succeeded | result 252B |
+| 02 | `xianyu.observe.snapshot` | job_e5a67473 | ✅ succeeded | result 582B |
+| 02 | `wechat.observe.probe` | job_59d54041 | ✅ succeeded | result 696B + **screenshot 577KB**（sha `47c5e2f6…`） |
+| 03 | `xiaowei.device.list` | job_a32c80e9 | ✅ succeeded | result 252B |
+| 03 | `xianyu.observe.snapshot` | job_53f6f992 | ✅ succeeded | result 539B |
+| 04 | `xiaowei.device.list` | job_77d3e6cb | ✅ succeeded | result 233B |
+| 04 | `xhs.observe.feed` | job_0cead745 | ❌ failed | `ADAPTER_HTTP_UNAVAILABLE`（loopback `127.0.0.1:17896` 不可达；restoration return_home 亦无法达 leased device） |
+
+全部 `approvalRequired=false` / `externalEffect=false`。四台 online 无 quarantine（quarantine=0）。`leases` 表空（activeLeases=0）。控制面 health 维持 `nonpayment_v1/active/pilotOnly/pilotConfigured`。
+
+**P2 判据核验**：4 台各 ≥1 job 成功 ✓；无新增 quarantine ✓；activeLeases=0 ✓。
 
 ### 闸 B 发现
 
@@ -69,10 +88,12 @@
 2. **explore 是 `canary_only/lab_only/E1`**：普通 job submit 会被 `CANARY_SESSION_REQUIRED` 拦，须 `session acquire --canary`（P4 用）。
 3. **registry observer 端点**：截图在 `/api/observer/v1/screen/:alias`（需 observer token），非 `/api/fleet/screen`；P1 截图经 control.db evidence 确认。
 4. **隔离硬拦已证**：非 pilot actor → `AUTONOMY_PILOT_SCOPE_MISS` block；pilot actor+alias → `NONPAYMENT_AUTONOMY_ACTIVE` allow。
+5. **设备能力白名单差异（P2 新增）**：不是每台都路由同一组 observe——04 无 `xianyu.observe.snapshot`/`wechat.observe.probe`（有 `image_manifest`/`feed`），03 无 `wechat.observe.*`。P2 按白名单配能力，避免盲目同质提交。
+6. **04 `xhs.observe.feed` 环境失败（P2 新增）**：`ADAPTER_HTTP_UNAVAILABLE`——loopback adapter `127.0.0.1:17896` 对 04 不可达（restoration 也报 return_home_error "gateway could not reach the leased device"）。同一设备 `device.list` 成功（走 transport:xiaowei:22222），说明是 xhs 专用 adapter/传输不可达，**非能力逻辑缺陷、非隔离拦截**。未盲目重试，记为环境债（`pitfall-…-20260809`）。
 
 ### 红线状态
 
-0 支付 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 被硬拦。**P1 后停下等 checkpoint，P2 未开**。
+0 支付 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 被硬拦。**P1+P2 已过（4 台各 ≥1 只读成功），P3 未开等 checkpoint**。
 
 ## PR4-4 — PR #7 review closure（REQUEST CHANGES，2026-08-09）
 

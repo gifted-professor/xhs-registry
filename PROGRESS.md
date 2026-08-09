@@ -1,12 +1,14 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · GO 2026-08-09T01:15Z · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · P1 三只读任务全绿 · P2 待 checkpoint
+> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · GO 2026-08-09T01:15Z · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · **P1 3/3 + P2 6/7（4 台各 ≥1 只读成功，无 quarantine）** · P3 待 checkpoint
 
-## 2026-08-08/09 Foundation PR4 — ActivatePilot（闸 B，P1 已过）
+## 2026-08-08/09 Foundation PR4 — ActivatePilot（闸 B，P1/P2 已过）
 
 **状态**：**闸 B 已执行**（2026-08-09，人显式开闸「现在开闸，P1 起步」）。备份 shadow 态 → task-launch `autonomyPolicyMode=shadow→nonpayment_v1`、`pilotActors=[claude-pilot-20260809]`、`pilotAliases=[01,02,03,04]`、`releaseId→rel-pilot-2026-08-09-foundation-pr4` → cross-repo 同步 → 控制面 reload → **GO 探针 1–8 全绿**。**Pilot 激活**：`policyMode={mode:nonpayment_v1, active:true, pilotOnly:true, pilotConfigured:true}`。
 
 **P1（01 只读 observe）三任务全绿**：`xiaowei.device.list` + `xianyu.observe.snapshot` + `wechat.observe.probe` → 全部 `succeeded`，`approvalRequired=false`、`externalEffect=false`，evidence 落库（3 result + 1 screenshot 486KB），restoration 正常回桌面，四台全 online 无 quarantine，activeLeases=0。
+
+**P2（扩 4 台只读 observe）6/7 succeeded**：按设备 routing 白名单配能力——02 `device.list`+`snapshot`+`wechat.probe` 全绿（probe 截图 577KB）；03 `device.list`+`snapshot` 全绿；04 `device.list` 绿 + `xhs.observe.feed` **环境失败**（`ADAPTER_HTTP_UNAVAILABLE`，loopback 17896 对 04 不可达；同设备 device.list 成功 → 传输问题非能力/隔离）。全部 `approvalRequired=false`/`externalEffect=false`，四台 online 无 quarantine，`leases` 表空。**P2 判据（4 台各 ≥1 成功、无新增 quarantine）满足**。
 
 **隔离验证**：非 pilot actor（`codex-share-b`）提交 → authorization `block / AUTONOMY_PILOT_SCOPE_MISS / out_of_scope / shadow`；pilot actor+alias → `allow / NONPAYMENT_AUTONOMY_ACTIVE / in_scope / deployed-runtime`。
 
@@ -14,8 +16,10 @@
 1. **支付无靶子**：当前 29 能力 effect classes 仅 `none/publish/reversible/social`，**无 `financial_commit` 类能力**，探针 #9（支付被拦）无直接靶子；硬闸由 `nonpayment-autonomy-policy.mjs:27-29`（`financial_commit→wait_financial_commit`）+ `protected-commit-policy` 代码保证。
 2. **explore 是 `canary_only/lab_only/E1`**：`xiaowei.explorer.primitive` 不能普通 job submit，须 `session acquire --canary`（P4 用）。
 3. **registry observer 截图端点**：`/api/observer/v1/screen/:alias`（需 observer token），非 `/api/fleet/screen`；P1 截图经 control.db evidence 直接确认。
+4. **设备能力白名单差异**（P2）：04 无 `xianyu.observe.snapshot`/`wechat.observe.probe`（有 `image_manifest`/`feed`）；03 无 `wechat.observe.*`。P2 按白名单配能力。
+5. **04 `xhs.observe.feed` 环境失败**（P2）：`ADAPTER_HTTP_UNAVAILABLE`（loopback 17896 不可达，restoration 亦 return_home_error）。非能力缺陷非隔离拦截，记为环境债（pitfall），未盲目重试。
 
-**下一步**：P2（扩 4 台 observe）**待人 checkpoint** → P3（dry_run 试写）→ P4（explore/repair canary session）；runbook §11 清旧分支；~~PR7 review~~ **7/7 闭合**（`files.json` `evidenceClosure`：H-01/02/03 + M-01/02/03/04）。  
+**下一步**：P3（dry_run 试写）**待人 checkpoint** → P4（explore/repair canary session）；runbook §11 清旧分支；~~PR7 review~~ **7/7 闭合**（`files.json` `evidenceClosure`：H-01/02/03 + M-01/02/03/04）。  
 **红线**：0 支付路径 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 已被硬拦。
 
 ## 2026-08-08 Foundation PR2 wiring + submit lock（已合 main）
