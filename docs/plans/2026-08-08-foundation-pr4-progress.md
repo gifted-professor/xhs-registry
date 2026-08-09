@@ -130,6 +130,8 @@
 
 0 支付 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 被硬拦。**P1+P2+P3+P4 已过（P3 只 dry_run 未真发；P4 canary 2/2 绿，P3 草稿副作用已清）**。
 
+> **红线判别（2026-08-09 独立 review 后钉死）**：capability 级 `externalEffect=true`（publish/dry_run 家族元数据）≠ 实际外发动作。pilot actor 的 2 个 `external_effect=1` succeeded job（`job_d09e94da` input_dry_run、`job_29affad6` open_dry_run）为 dry_run：**无 submit、无发布、无 approval**（result_json 文本标注「不真实发布」+ restoration 回 launcher + approval_audit 0 新增佐证）。禁列能力（douyin.observe.share_link / xhs.comment.send / xhs.follow.ensure）与 `financial_commit` 类能力在试点窗口**零执行**。后续 review 勿把 capability 级 flag 当实际动作上报。
+
 ## PR4-4 — PR #7 review closure（REQUEST CHANGES，2026-08-09）
 
 独立审查结论：需要修的是**审计表达与证据不可变性**，不是重新执行 DeployShadow。7 项发现全部闭合，证据写进 `foundation-pr4.files.json` `evidenceClosure`（7/7 verdict=fixed）：
