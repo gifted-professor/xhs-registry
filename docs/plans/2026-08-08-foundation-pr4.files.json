@@ -2,38 +2,47 @@
   "schemaId": "xhs.foundation-pr4-scope.v1",
   "title": "Foundation PR4: DeployShadow then (separate gate) ActivatePilot",
   "branch": "foundation/pr4-deploy-shadow",
-  "status": "draft-plan-review-closed",
+  "status": "gate-a-executed",
   "baselines": {
     "routingTarget": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
     "registryTarget": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
-    "liveRoutingCheckout": "42b89640e5b2ecc20bc01bb22e68d26b787acd3f",
-    "liveRoutingBranch": "foundation/pr2-submit-integrity-lock",
-    "liveTaskLaunchCommit": "524c21e540e951d1174cbfecaca0049b3c4058c7",
-    "liveLocalRoutingOriginMain": "3b1c9ae",
-    "liveLocalRegistryOriginMain": "a305f59",
-    "liveRegistryWorkingTree": "6853d3bb5045b390c2081903307574d3e35b566d",
-    "liveCrossRepoDeviceAgentCommit": "1e1d7f6cc423c8b7176ebbba199a18bfea58a161",
-    "liveCrossRepoRegistryCommit": "446494ab7d03382b268ff973ac12951cb13fc4c6",
-    "liveCrossRepoWindowsRegistryCommit": "5e25df8e62b5a64f8ad4e86173b4975c013e18a1",
-    "liveReleaseId": "rel-shadow-2026-08-02-repair-consumer-v1",
-    "liveControlPlaneHealth20260809": "down",
+    "liveRoutingCheckout": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+    "liveRoutingBranch": "main",
+    "liveTaskLaunchCommit": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+    "liveLocalRoutingOriginMain": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+    "liveLocalRegistryOriginMain": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+    "liveRegistrySourceBranch": "foundation/pr4-deploy-shadow",
+    "liveCrossRepoDeviceAgentCommit": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+    "liveCrossRepoRegistryCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+    "liveCrossRepoWindowsRegistryCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+    "liveReleaseId": "rel-shadow-2026-08-08-foundation-pr4",
+    "liveControlPlaneHealth20260809": "up-restored-20260809T0049Z",
+    "liveRegistryDiskSha256Lf": "151aa93bd8d0d2b4bb40863494f47ec70625f8fa459f8e7a72d14e2107b7575b",
     "requireMainOrigin": true
   },
   "authorization": {
     "sourceImplementation": true,
     "writePlanDocs": true,
-    "windowsDeploy": false,
-    "controlPlaneReload": false,
-    "registryReload": false,
+    "windowsDeploy": true,
+    "controlPlaneReload": true,
+    "registryReload": true,
     "deviceActions": false,
     "jobOrSessionSubmit": false,
     "activatePilot": false,
     "realDeviceCanary": false
   },
   "gates": {
-    "A_DeployShadow": "explicit-human-go",
-    "B_ActivatePilot": "explicit-human-go-separate",
+    "A_DeployShadow": "executed-2026-08-09T00:49Z-go-probes-1-10-green",
+    "B_ActivatePilot": "explicit-human-go-separate-not-opened",
     "preGateA_controlPlaneLiveness": "required"
+  },
+  "deployExecution": {
+    "executedAt": "2026-08-09T00:49Z",
+    "backupDir": "backups/registry-deploy-shadow-pr4-20260809-003955",
+    "controlPlaneRecovery": "D0-main-flow-first-startup-up",
+    "receiptScope": "6-runtime-critical-suites-41-pass-0-fail",
+    "knownFailingEnvDebt": "control-plane-core.test.mjs:644 migrateLegacyPending JOB_WAIT_TIMEOUT (pre-existing; identical code at 42b8964; not in receipt)",
+    "rollback": "not-triggered"
   },
   "mergeOrder": ["routing", "registry"],
   "policyModeExact": "shadow",
@@ -62,7 +71,7 @@
         "docs/plans/2026-08-08-foundation-pr4-deploy-shadow.md",
         "docs/plans/2026-08-08-foundation-pr4-plan.md"
       ],
-      "notes": "PR4-0 may be registry-only docs; add routing twin pointer before PR4-1 runbook. Fetch+cat-file fb7747f required before checkout."
+      "notes": "DeployShadow: checkout now main @ fb7747f. Pending: runbook 11 cleanup (remote prune + branch deletion needs human confirmation); migrateLegacyPending env-debt test needs upstream fix (PR + human review)."
     },
     "registry": {
       "name": "xhs-registry",
@@ -75,7 +84,7 @@
         "HANDOFF-2026-08-08-foundation-pr4-gate.md",
         "PROGRESS.md"
       ],
-      "notes": "PR4-1 runbook Draft written 2026-08-09 (fetch/align, backup, git-show LF deploy, GO probes, rollback D0/D1). Execution still 0 live until Gate A. Commit docs on foundation/pr4-deploy-shadow; Probe #10 must LF-normalize vs git blob."
+      "notes": "DeployShadow executed: registry.mjs deployed as LF blob 151aa93b (disk=blob). Gate A passed 2026-08-09T00:49Z. Gate B (ActivatePilot) remains separate and not opened. Probe 10 verified blob vs deployed file byte-equal."
     }
   }
 }
