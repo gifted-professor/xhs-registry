@@ -182,10 +182,26 @@
 
 **0-nonterminal barrier**：任何回滚前 control-plane `activeLeases` 必须为 0、approvals 队列空（pilot 空闲态两条件均满足）。不携带 in-flight 任务回滚。
 
+## PR4-5 — PR #44 部署 + 带 price full_dry_run 回归（FAILED；root cause 修正为 commit-step bug）
+
+**部署**（2026-08-09）：routing PR #44 合入 `main` → commit `48e71545437c89319c9820fd2cfeb68c9d26023a`（`fix/xianyu-price-numpad-settle-interval`，`settle(220)`→`APP_NUMPAD_SETTLE_MS=450`）。Windows routing checkout HEAD==`48e7154`，`xianyu-operator.mjs` 磁盘 mtime 18:46 +08。`cross-repo-release.json` `deviceAgentCommit`/`taskLaunchCommit` → `48e7154`。
+
+**回归**（device.01，actor `claude-pilot-20260809`，publish-dry-run --price 199）：**FAILED `price:price-unverified`**。干语义正确：无发布、无草稿、无副作用，restoration 回闲鱼主界面。价格读回不匹配 → **用户关闭条件「价格读回匹配」未满足，gate 保持 OPEN**。
+
+**Root cause（穷尽实测 V7–V11 修正）**：
+- **PR #44 的 220→450ms fix 解决的是不存在的问题**——从未发生丢键。199 在 220ms 和 450ms 下都正确输入（price sheet 内「预估鱼小铺软件服务费 ¥3.18 / 预估到手价 ¥195.82」均来自 199，费用计算证明输入已注册）。
+- **真因：price sheet「确定」commit 从不把值写回 compose page**。点确定会关 sheet（像素验证：黄色确定→白色、scrim→白色），但 compose page 价格位标签恒为「价格设置」无值（`findPriceField` 匹配不到 199）。
+- **排除清单**（临时 instrumented copy，V7–V11 五轮，已删除）：确定、返回、聚焦（字段 `focused` 恒 false）、重按确定、滚动强制 re-render、收起键盘（无隐藏 commit 控件）、点 promo banner「可以设粉丝价」——全部失败。
+- **gap4 的 2026-07-22「实证」几乎肯定是 false positive**：它从打开中的 sheet 字段读到值，不是从 compose page 读。该流程是 **latent、从未验证过**（带 price 的 full_dry_run 从未成功过）。
+
+**留痕**：registry KB `pitfall-xianyu-full-dry-run-price-commit-never-writes-back-20260809`（active_blocker，needsEngineer=true）；旧 pitfall `…-price-keypad-interval-20260809` 已 PATCH 标记「已证伪」+ 指向新条目。
+
+**处置**：不重试同参；gate 保持 OPEN；上游需新 fix（查 price sheet 确定→compose 写回链路，**非 settle 间隔**）+ human review 后再带参回归。
+
 ## 未做（红线）
 
 - [x] **P1-P4 已全部执行完毕**（P4 = explore/repair canary，2026-08-09 02:05–02:08Z，2/2 绿）
-- [x] **image/full_dry_run 补全**（2026-08-09：推 staging 相册 `XianyuStg2` → image_dry_run ✅ + full_dry_run ✅（r2，r1 price 键位竞态干净失败），详见 P3b 块）→ **dry_run 矩阵 4 能力全绿**
+- [x] **image/full_dry_run 补全**（2026-08-09：推 staging 相册 `XianyuStg2` → image_dry_run ✅ + full_dry_run ✅（r1 带 price 干净失败，当时误判为 price 键位竞态——**该判断已被 PR4-5 实测证伪**，见下），详见 P3b 块）→ **dry_run 矩阵 4 能力无 price 参数全绿；带 price 参数 gate OPEN（见 PR4-5）**
 - [ ] codex-luna 第二个 pilot actor（就绪后加入名单）
 - [ ] runbook §11 旧分支/陈旧 ref 清理（贴人确认再删）
 - [ ] routing 仓对称指针（可选）
@@ -193,7 +209,7 @@
 ## 下一步
 
 1. **处置已定**（2026-08-09 人裁决）：**保持 pilot active 观察**（`nonpayment_v1` 维持，不回滚）。`files.json` `disposition=keep-pilot-active-observe` 已记录
-2. 观察期后续（非阻塞）：~~补 staging 图跑 image/full dry_run 补矩阵~~ **已完成（P3b，2026-08-09）**；codex-luna 就绪后加入 pilotActors + reload；full_dry_run price 参数修复 = **routing PR #44**（`fix/xianyu-price-numpad-settle-interval`，`settle(220)`→`APP_NUMPAD_SETTLE_MS`），合入部署后再带参回归
+2. 观察期后续（非阻塞）：~~补 staging 图跑 image/full dry_run 补矩阵~~ **已完成（P3b，2026-08-09）**；codex-luna 就绪后加入 pilotActors + reload；~~full_dry_run price 参数修复 = routing PR #44~~ → **PR #44 已合入部署（48e7154），带 price 回归 FAILED（PR4-5）**：PR #44 修的是不存在的丢键问题，gate 保持 OPEN，待上游 commit-step 新 fix + human review 后再带参回归
 3. runbook §11：列 `git branch -vv` 审一遍 → **贴人确认**后 `remote prune` + 删已合/废弃分支
 4. ~~PR7 review 继续~~ → **已完成**：7/7 闭合（PR4-4），commit 提交到分支（见 git 状态）
 
