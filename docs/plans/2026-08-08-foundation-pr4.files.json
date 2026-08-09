@@ -3,6 +3,7 @@
   "title": "Foundation PR4: DeployShadow then (separate gate) ActivatePilot",
   "branch": "foundation/pr4-deploy-shadow",
   "status": "gate-b-p4-executed",
+  "redLineDistinction": "capability-level externalEffect=true (publish/dry_run family metadata) is NOT actual external action. Pilot actor claude-pilot-20260809 has exactly 2 succeeded jobs with external_effect=1: job_d09e94da (xianyu.publish.input_dry_run) and job_29affad6 (xianyu.publish.open_dry_run), both P3. Capability-level flag only: no submit/publish action (result_json input text labelled non-real-publish, restoration to launcher), approval_audit 0 new, no financial effect. Zero forbidden capabilities (douyin.observe.share_link / xhs.comment.send / xhs.follow.ensure) and zero financial_commit-class capability executed in the pilot window (2026-08-08T18:00Z+). Added 2026-08-09 after independent review refuted the over-broad 'no external_effect=1 job' acceptance criterion; audit artifacts were already accurate (see observedAfter.gateB.p3Jobs).",
   "auditVersion": "2",
   "auditNote": "H-01 fix (PR #7 REQUEST CHANGES): expected (authorized) values and observed (post-deployment) values are now separate and immutable. Original authorized values recovered from git history (commit e0db476, files.json status=draft-plan-review-closed) and gate-A backup dir. Never overwrite authorizedBefore with observedAfter.",
   "authorizedBefore": {

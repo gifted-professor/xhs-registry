@@ -28,7 +28,7 @@
 9. **interactive canary session 生命周期**（P4）：长跑 canary action（如 flutter 过渡验证跑满 60s lease）结束即自动释放 session；事后手动 release 返回 `SESSION_NOT_FOUND`（404），lease 行在 `expires_at` 后由 `cleanupExpiredLeases` **自清扫**（interactive 类直接删除，不 quarantine 不 recovery），终态 leases=0。证据链完整性与手动 release 成败无关。
 
 **下一步**：**处置已定（2026-08-09 人裁决）→ 保持 pilot active 观察**（`nonpayment_v1` 维持，不回滚；`files.json` `disposition` 已记录）。观察期后续：补 staging 图跑 image/full dry_run、codex-luna 入名单；runbook §11 清旧分支；~~PR7 review~~ **7/7 闭合**（`files.json` `evidenceClosure`：H-01/02/03 + M-01/02/03/04）。  
-**红线**：0 支付路径 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 已被硬拦。
+**红线**：0 支付路径 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 已被硬拦。**注意判别**：pilot actor 有 2 个 `external_effect=1` 的 succeeded job（P3 `input_dry_run`/`open_dry_run`）——那是 **capability 级** publish/dry_run 家族元数据，dry_run 不点发布、无 submit、无真发（已由 result_json + approval_audit 0 新增证明）；「capability 级 externalEffect=true」≠「实际发生了外发动作」。
 
 ## 2026-08-08 Foundation PR2 wiring + submit lock（已合 main）
 
