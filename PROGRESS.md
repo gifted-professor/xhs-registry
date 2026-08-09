@@ -1,19 +1,20 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-09 Foundation PR4 计划 **review findings 已收口** · Not deployed · Pilot inactive · 控制面曾实测 down
+> 最后更新：2026-08-09 Foundation PR4 **DeployShadow 已执行** · GO 2026-08-09T00:49Z · `rel-shadow-2026-08-08-foundation-pr4` · Pilot inactive（闸 B 未开）
 
-## 2026-08-08/09 Foundation PR4 计划 Draft（PR4-0 · review 收口）
+## 2026-08-08/09 Foundation PR4 — DeployShadow（闸 A 已过）
 
-**状态**：plan / baseline / `foundation-pr4.files.json` 已按 bridge + 2026-08-09 实测加厚修订；**未** DeployShadow / reload / ActivatePilot。
+**状态**：**闸 A 已执行**（2026-08-09 GO）。双仓 fetch/对齐 → 备份 → routing checkout `main @ fb7747f` → task-launch 重写 → 控制面 17920 **恢复拉起**（D0 主流程）→ registry LF blob 部署 + reload → cross-repo-release.json 重写 → **GO 探针 1–10 全绿**。**Pilot 未激活**（`policyMode=shadow`、`pilotActors/pilotAliases=[]`、`pilotConfigured=false`）。
 
-**目标 tip**：routing `fb7747feefd975ad14fdd51c3313b3487ae978ee` · registry `b1e5e70d3a53c8c1d119b078833e9066f8ccf107`。
+**部署后值**：routing `fb7747feefd975ad14fdd51c3313b3487ae978ee` @ `main` · registry `b1e5e70d3a53c8c1d119b078833e9066f8ccf107` · task-launch `gitCommit=fb7747f…` · `releaseId=rel-shadow-2026-08-08-foundation-pr4` · registry.mjs 磁盘 = tip blob LF `151aa93b…` · cross-repo `registryCommit==windowsRegistryCommit=b1e5e70`（收口）。
 
-**live 基线**：旧 `rel-shadow-2026-08-02-repair-consumer-v1`；四层漂移（checkout `42b8964` @ feature ≠ pin `524c21e` ≠ 本地 origin/main ≠ GitHub tip）；2026-08-09 **17920 down**；registry.mjs CRLF≠blob LF。详见 `docs/plans/2026-08-08-foundation-pr4-baseline.md`。
+**执行发现（需 follow-up）**：
+1. **release gates test receipt 硬约束**：`runtime/release-test-receipt.json` 必须 `gitCommit==HEAD` + `passed≥15` + ≥2 critical 标记。旧 receipt 是旧 commit 的 → 拦控制面启动。本闸用 6 个全绿 critical 套件（41 过/0 败）生成 scoped receipt 放行。
+2. **`migrateLegacyPending` 测试 Windows 预存在失败**（control-plane-core.test.mjs:644，JOB_WAIT_TIMEOUT 5s；代码与旧 checkout 42b8964 逐字节相同 → 非本次回归）。**未**进 receipt，记环境债，待 routing 仓处理。
+3. **agent-entry release 段 schema 无 `pilotConfigured`/commit 字段**（runbook 探针 #6 字面偏差）；实际语义由控制面 health + cross-repo-release.json 满足。
 
-**收口要点**：回滚锚点=真实 checkout；双仓 fetch+cat-file；探针 #10 LF 归一化；GO≠wiring 已验；leases 禁真空变绿；`policyMode` 仅字面 `shadow`。
-
-**下一步**：PR4-1 runbook Draft → 恢复控制面 → **闸 A**；Pilot **闸 B** 另批。  
-**红线**：0 deploy/reload · 0 Pilot · 控制面 down 不开闸 A。
+**下一步**：闸 B（ActivatePilot）**另批**；runbook §11 清旧分支/陈旧 ref（贴人确认）；PR 提交（PR4-2）后人审。  
+**红线**：0 ActivatePilot · 0 真机 canary · 0 支付路径。
 
 ## 2026-08-08 Foundation PR2 wiring + submit lock（已合 main）
 
