@@ -63,6 +63,7 @@
 - [x] GO 探针 1–8 全绿（#9 支付无靶子，见发现 1）
 - [x] **P1**：01 上 `xiaowei.device.list` + `xianyu.observe.snapshot` + `wechat.observe.probe` → **3/3 succeeded**，全只读、evidence 落库（含截图 486KB）、restoration 正常、四台无 quarantine、activeLeases=0
 - [x] **P2**（人 checkpoint「现在开 P2」后）：按各设备能力白名单扩 4 台只读 observe → **6/7 succeeded**，4 台各 ≥1 成功，无新增 quarantine（详见 P2 块）
+- [x] **P3**（人 checkpoint「开 P3 dry_run」后）：01 上 `input_dry_run`+`open_dry_run` 绿、`image_dry_run` 干净失败（staging 相册已不在手机）→ dry_run 语义+三探针验证（详见 P3 块）
 
 ### P2 结果（2026-08-09，扩 4 台只读 observe）
 
@@ -81,6 +82,20 @@
 全部 `approvalRequired=false` / `externalEffect=false`。四台 online 无 quarantine（quarantine=0）。`leases` 表空（activeLeases=0）。控制面 health 维持 `nonpayment_v1/active/pilotOnly/pilotConfigured`。
 
 **P2 判据核验**：4 台各 ≥1 job 成功 ✓；无新增 quarantine ✓；activeLeases=0 ✓。
+
+### P3 结果（2026-08-09，dry_run 试写，01 起步）
+
+`xianyu.publish.*_dry_run` 是 publish 类能力（capability 级 `externalEffect=true`），但 dry_run 语义 = 预检/试写，**不点发布、不真发**。01 上三个：
+
+| 能力 | jobId | 结果 | 实际动作 |
+|---|---|---|---|
+| `xianyu.publish.input_dry_run` | job_d09e94da | ✅ succeeded | 把测试文本打进闲鱼发布编辑器输入框（textLen=40 textVerified=true flutterInputActive），**无 submit/publish 动作**；restore 回桌面 |
+| `xianyu.publish.open_dry_run` | job_29affad6 | ✅ succeeded | 打开发布流程页，`{ok:true}`，无输入无提交；restore 回桌面 |
+| `xianyu.publish.image_dry_run` | job_30f27593 | ❌ `VERIFICATION_FAILED` | `step=image-album-missing`——历史 staging 相册 `XianyuStg2`（`/sdcard/Pictures/XianyuStg2/{a,b}.png`）已不在 01 手机（早前会话测试图已清）。**干净失败**：dry_run 无副作用，能力自验手机真实状态未造假 |
+
+**P3 三探针**：dry_run 返回 expected（不真发）✓（input/open audit 无 submit 动作）· approval_audit 0 新增（仍 2 行，试点前遗留）✓ · financial_commit 0 job 0 event ✓ · leases 空 ✓。
+
+**副作用说明**：input_dry_run 把测试文本留在了 01 闲鱼发布编辑器的**未发送草稿**里（试写即此意，非真实发布、非支付）。可在闲鱼 app 手动清草稿。
 
 ### 闸 B 发现
 

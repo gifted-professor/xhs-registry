@@ -1,6 +1,6 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · GO 2026-08-09T01:15Z · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · **P1 3/3 + P2 6/7（4 台各 ≥1 只读成功，无 quarantine）** · P3 待 checkpoint
+> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · GO 2026-08-09T01:15Z · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · **P1 3/3 + P2 6/7（4 台各 ≥1 只读）+ P3 dry_run 2 绿 1 干净失败** · P4 待 checkpoint
 
 ## 2026-08-08/09 Foundation PR4 — ActivatePilot（闸 B，P1/P2 已过）
 
@@ -10,6 +10,8 @@
 
 **P2（扩 4 台只读 observe）6/7 succeeded**：按设备 routing 白名单配能力——02 `device.list`+`snapshot`+`wechat.probe` 全绿（probe 截图 577KB）；03 `device.list`+`snapshot` 全绿；04 `device.list` 绿 + `xhs.observe.feed` **环境失败**（`ADAPTER_HTTP_UNAVAILABLE`，loopback 17896 对 04 不可达；同设备 device.list 成功 → 传输问题非能力/隔离）。全部 `approvalRequired=false`/`externalEffect=false`，四台 online 无 quarantine，`leases` 表空。**P2 判据（4 台各 ≥1 成功、无新增 quarantine）满足**。
 
+**P3（dry_run 试写，01）2 绿 1 干净失败**：`input_dry_run`+`open_dry_run` succeeded（publish 类能力 capability 级 externalEffect=true，但 audit 只含输入/打开发布流程动作，**无 submit、不真发**）；`image_dry_run` `VERIFICATION_FAILED`/`image-album-missing`（历史 staging 相册已不在手机，干净失败）。**三探针绿**：approval_audit 0 新增（仍 2 行试点前遗留）· financial 0 · leases 空。副作用：01 闲鱼留有**未发送草稿**（试写即此意，可手动清）。
+
 **隔离验证**：非 pilot actor（`codex-share-b`）提交 → authorization `block / AUTONOMY_PILOT_SCOPE_MISS / out_of_scope / shadow`；pilot actor+alias → `allow / NONPAYMENT_AUTONOMY_ACTIVE / in_scope / deployed-runtime`。
 
 **执行发现（需 follow-up）**：
@@ -18,8 +20,10 @@
 3. **registry observer 截图端点**：`/api/observer/v1/screen/:alias`（需 observer token），非 `/api/fleet/screen`；P1 截图经 control.db evidence 直接确认。
 4. **设备能力白名单差异**（P2）：04 无 `xianyu.observe.snapshot`/`wechat.observe.probe`（有 `image_manifest`/`feed`）；03 无 `wechat.observe.*`。P2 按白名单配能力。
 5. **04 `xhs.observe.feed` 环境失败**（P2）：`ADAPTER_HTTP_UNAVAILABLE`（loopback 17896 不可达，restoration 亦 return_home_error）。非能力缺陷非隔离拦截，记为环境债（pitfall），未盲目重试。
+6. **dry_run 语义已证**（P3）：publish 类能力 capability 级 `externalEffect=true`，但 dry_run 只走输入/打开发布流程，**无 submit 动作、不真发**；approval_audit 0 新增、financial 0。input_dry_run 留未发送草稿在 01 闲鱼。
+7. **01 staging 相册缺失**（P3）：`XianyuStg2`（`/sdcard/Pictures/XianyuStg2/{a,b}.png`）已不在 01 手机 → `image_dry_run`/`full_dry_run` 干净失败（`image-album-missing`）。要跑 image/full 需先推新 staging 图并算 sha。
 
-**下一步**：P3（dry_run 试写）**待人 checkpoint** → P4（explore/repair canary session）；runbook §11 清旧分支；~~PR7 review~~ **7/7 闭合**（`files.json` `evidenceClosure`：H-01/02/03 + M-01/02/03/04）。  
+**下一步**：P4（explore/repair canary session）**待人 checkpoint**（image/full dry_run 需先补 staging 图）；runbook §11 清旧分支；~~PR7 review~~ **7/7 闭合**（`files.json` `evidenceClosure`：H-01/02/03 + M-01/02/03/04）。  
 **红线**：0 支付路径 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 已被硬拦。
 
 ## 2026-08-08 Foundation PR2 wiring + submit lock（已合 main）
