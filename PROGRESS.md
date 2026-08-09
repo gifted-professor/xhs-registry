@@ -1,15 +1,61 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-08 Foundation PR2 **wiring closure** 源码补丁待 review（未部署）
+> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · **PR #45-#50 闲鱼 standalone price 持久化验证闭环已完成**。
+>
+> routing exact deployed merge `cc7e526e4e6b9eab047afb5c3daa964852af79e7`；03 正式 leased `xianyu.publish.full_dry_run`（price=199、saveDraft=false）`job_425d8d61-f037-411e-85ef-fcdd12e3ea44` / `run_d9c72468-be83-4cb6-9819-d98e2c6e7f49` **succeeded**：回开价格面板精确读回 `¥199.00`，最终 compose 为 `¥199.00`，verification/restoration 均成功并回 launcher，未发布、未保存草稿，终态 lease=0。原 price accessibility active blocker 已 resolved。
 
-## 2026-08-08 Foundation PR2 wiring closure（post-merge hotfix）
+## 2026-08-09 PR #45-#50 — 闲鱼 price 两阶段持久化回读闭环
 
-**问题**：PR2/PR3 已合入 main，但 Orchestrator 仍可裸跑 Raw TaskPlan、assignment 未带 `boundNode`、Worker 仍本地判权、Receipt v2 未接线、单边 hash 可 fail-open。
+**总裁决：APPROVE，已合并、部署并真机验收。** 原 PR #45 的方向正确，但逐文件严格审查与正式设备证据先后暴露：sheet/compose 分类不足、compose 价格行邻域不稳定、视觉写回后 a11y 仍旧值，以及 post-confirm compose 可能完全不暴露 `priceField`。修复按证据拆为 PR #45-#50，全部经独立 review 后合并；最终运行提交为 `cc7e526e4e6b9eab047afb5c3daa964852af79e7`。
 
-**动作**：分支 `foundation/pr2-wiring-closure` 强制 ExecutionPlan、boundNode assignment、Worker 单裁判、v2 receipt + notSent null jobIds、presence 对称、symlink/路径规范化、algorithm 传播；fake CP E2E 覆盖 normal/drift/resume。
+- **实现**：首次 sheet 输入/确认后只证明关闭；再按首次审计的价格行 bounds 重开 sheet；只对价格字段做规范化后的精确金额匹配；读回后再次关闭并证明最终 compose。缺失 `priceField` 时，sheet 控件证据与 compose 可见性独立分类；任一阶段失败均 fail closed，禁止后续保存草稿或发布。
+- **测试/部署闸门**：PR #50 focused `68/68`、release-critical `81/81`、`npm run check` 通过；release receipt、main/origin、task-launch 四者均锁定 `cc7e526…`，dirty=false，自动批准/standing-grant 均 OFF，reload 前后 activeLeases=0、runningJobs=0。
+- **正式验收**：03 readiness 先由只读 `xianyu.observe.snapshot` `job_a3d9bc83-2d1c-4540-b983-373b5a088a35` 刷新为 ready；最终 job `job_425d8d61-f037-411e-85ef-fcdd12e3ea44` 持有可见 lease `lease_1ae6f9f2-2a35-4f3f-9fca-4e65e22b2518`，run manifest 锁定 `cc7e526…`，终态 succeeded。
+- **证据**：`xianyu-price-persisted-211d0120.png` 显示价格字段 `¥199.00`（同屏服务费 `-¥3.18`、到手价 `¥195.82`，未误命中）；`xianyu-publish-final-211d0120.png` 显示最终 compose `¥199.00`；result verification/restoration 均 `ok:true`，回 `com.miui.home.launcher.Launcher`。
+- **安全边界**：参数 `saveDraft:false`；未执行 publish tap、draft save、设备旁路、control.db 写入或人工批准；终态 activeLeases=0、runningJobs=0，03 ready=yes/unresolvedFailure=none。
+- **留痕**：`pitfall-xianyu-price-compose-a11y-stale-readback-20260809` 已转 `resolved`；新增 `recipe-xianyu-price-two-stage-persisted-readback-20260809`（`verifyMode=constraint`）。
 
-**证据**：见 `docs/plans/2026-08-08-foundation-pr2-wiring-closure.md`。  
-**红线**：0 Windows deploy · 0 Pilot · 不进 PR4 直至本补丁 review 通过。
+## 2026-08-08/09 Foundation PR4 — ActivatePilot（闸 B，P1-P4 已过）
+
+**状态**：**闸 B 已执行**（2026-08-09，人显式开闸「现在开闸，P1 起步」）。备份 shadow 态 → task-launch `autonomyPolicyMode=shadow→nonpayment_v1`、`pilotActors=[claude-pilot-20260809]`、`pilotAliases=[01,02,03,04]`、`releaseId→rel-pilot-2026-08-09-foundation-pr4` → cross-repo 同步 → 控制面 reload → **GO 探针 1–8 全绿**。**Pilot 激活**：`policyMode={mode:nonpayment_v1, active:true, pilotOnly:true, pilotConfigured:true}`。
+
+**P1（01 只读 observe）三任务全绿**：`xiaowei.device.list` + `xianyu.observe.snapshot` + `wechat.observe.probe` → 全部 `succeeded`，`approvalRequired=false`、`externalEffect=false`，evidence 落库（3 result + 1 screenshot 486KB），restoration 正常回桌面，四台全 online 无 quarantine，activeLeases=0。
+
+**P2（扩 4 台只读 observe）6/7 succeeded**：按设备 routing 白名单配能力——02 `device.list`+`snapshot`+`wechat.probe` 全绿（probe 截图 577KB）；03 `device.list`+`snapshot` 全绿；04 `device.list` 绿 + `xhs.observe.feed` **环境失败**（`ADAPTER_HTTP_UNAVAILABLE`，loopback 17896 对 04 不可达；同设备 device.list 成功 → 传输问题非能力/隔离）。全部 `approvalRequired=false`/`externalEffect=false`，四台 online 无 quarantine，`leases` 表空。**P2 判据（4 台各 ≥1 成功、无新增 quarantine）满足**。
+
+**P3（dry_run 试写，01）矩阵已补全**：`input_dry_run`+`open_dry_run` succeeded（publish 类能力 capability 级 externalEffect=true，但 audit 只含输入/打开发布流程动作，**无 submit、不真发**）；`image_dry_run` 首跑 `VERIFICATION_FAILED`/`image-album-missing`（历史 staging 相册已不在手机，干净失败）。**P3b 补全（2026-08-09，人批「推图 + 补 dry_run 矩阵」）**：经网关 adb_shell 推 `XianyuStg2/{a,b}.png`（sha `cfa031f7…`，MediaStore 确认索引）→ `image_dry_run` `job_eab8bc0b` ✅（选相册 2 图 下一步(2) 完成，无 publish tap）+ `full_dry_run` `job_b849c7df` ✅（r1 `job_ffcc0c64` 带 price 参数**干净失败** `price:price-unverified`——当时误判为 price 数字键位 `settle(220)<450ms` 竞态，**该判断已被后续实测证伪**：220/450ms 下 199 都正确输入，commit 已视觉写回，但 compose accessibility 可保留旧值或缺失；该问题现由 PR #45-#50 闭环）；r2 去 price 参数重跑走全步序，`saveDraft:false` 未写草稿，restoration launcher）。**探针全绿**：approval_audit 仍 2（无新增）· financial 0 · leases 空 · pilot 窗口 18 job 100% pilot actor、禁列能力 0 执行、非终态 0 · control.db 非终态 46 全为 pilot 前遗留。副作用：input_dry_run 曾留未发送草稿（P4 已清）。
+
+**P4（explore/repair canary session，01）2/2 绿**：`session acquire --canary`（Tier 2 E1/R1，须 canary session）——`xiaowei.explorer.primitive {primitive:"screen"}` ✅（job_bf77511d，screen.png 2.1MB 拍到闲鱼发布编辑器 + P3 草稿，restoration ok）；`xianyu.probe.flutter_pointer_tap {saveDraft:false}` ✅（job_16f32260，typed-http 3 tap 0 fallback，**restoration 回 launcher，P3 未发送草稿随 discard 清除**）。两 job 均 `approvalRequired=false`/`externalEffect=false`/canary=true。**P4 后探针全绿**：control plane 仍 `nonpayment_v1/active/pilotOnly/pilotConfigured`、activeLeases=0、leases=0、sessions=0、approval_audit 仍 2、四台无 quarantine、financial 0。
+
+**隔离验证**：非 pilot actor（`codex-share-b`）提交 → authorization `block / AUTONOMY_PILOT_SCOPE_MISS / out_of_scope / shadow`；pilot actor+alias → `allow / NONPAYMENT_AUTONOMY_ACTIVE / in_scope / deployed-runtime`。
+
+**执行发现（需 follow-up）**：
+1. **支付无靶子**：当前 29 能力 effect classes 仅 `none/publish/reversible/social`，**无 `financial_commit` 类能力**，探针 #9（支付被拦）无直接靶子；硬闸由 `nonpayment-autonomy-policy.mjs:27-29`（`financial_commit→wait_financial_commit`）+ `protected-commit-policy` 代码保证。
+2. **explore 是 `canary_only/lab_only/E1`**：`xiaowei.explorer.primitive` 不能普通 job submit，须 `session acquire --canary`（P4 用）。
+3. **registry observer 截图端点**：`/api/observer/v1/screen/:alias`（需 observer token），非 `/api/fleet/screen`；P1 截图经 control.db evidence 直接确认。
+4. **设备能力白名单差异**（P2）：04 无 `xianyu.observe.snapshot`/`wechat.observe.probe`（有 `image_manifest`/`feed`）；03 无 `wechat.observe.*`。P2 按白名单配能力。
+5. **04 `xhs.observe.feed` 环境失败**（P2）：`ADAPTER_HTTP_UNAVAILABLE`（loopback 17896 不可达，restoration 亦 return_home_error）。非能力缺陷非隔离拦截，记为环境债（pitfall），未盲目重试。
+6. **dry_run 语义已证**（P3）：publish 类能力 capability 级 `externalEffect=true`，但 dry_run 只走输入/打开发布流程，**无 submit 动作、不真发**；approval_audit 0 新增、financial 0。input_dry_run 留未发送草稿在 01 闲鱼。
+7. **01 staging 相册缺失**（P3）→ **已补**（P3b）：经网关 adb_shell 推新 `XianyuStg2/{a,b}.png`（sha `cfa031f7…`，MediaStore 确认索引）→ `image_dry_run`/`full_dry_run` 补绿，矩阵 4/4（无 price 参数）。**price 参数相关 pitfall 已闭环**：原记录「`settle(220)<450ms` 数字被吞」与「commit 不写回」均被实测证伪；真实问题为视觉已写回但 compose accessibility 可保留旧值或缺失，已由 PR #45-#50 两阶段回读修复并正式真机验收（`pitfall-xianyu-price-compose-a11y-stale-readback-20260809`，resolved）。
+8. **P3 草稿副作用已清**（P4）：flutter_pointer_tap `saveDraft:false` = discard-without-saving，restoration 回 launcher，01 闲鱼发布编辑器未发送草稿已清除。
+9. **interactive canary session 生命周期**（P4）：长跑 canary action（如 flutter 过渡验证跑满 60s lease）结束即自动释放 session；事后手动 release 返回 `SESSION_NOT_FOUND`（404），lease 行在 `expires_at` 后由 `cleanupExpiredLeases` **自清扫**（interactive 类直接删除，不 quarantine 不 recovery），终态 leases=0。证据链完整性与手动 release 成败无关。
+
+**下一步**：**处置已定（2026-08-09 人裁决）→ 保持 pilot active 观察**（`nonpayment_v1` 维持，不回滚；`files.json` `disposition` 已记录）。观察期后续：~~补 staging 图跑 image/full dry_run~~ **已完成（P3b）**；~~full_dry_run 带 price 参数闭环~~ **已由 PR #45-#50 完成并在 `cc7e526…` 正式 leased job 验收**；codex-luna 入名单；runbook §11 清旧分支；~~PR7 review~~ **7/7 闭合**（`files.json` `evidenceClosure`：H-01/02/03 + M-01/02/03/04）。
+
+**红线**：0 支付路径 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 已被硬拦。**注意判别**：pilot actor 有 4 个 `external_effect=1` 的 succeeded job（P3 `input_dry_run`/`open_dry_run` + P3b `image_dry_run`/`full_dry_run`）——那是 **capability 级** publish/dry_run 家族元数据，dry_run 不点发布、无 submit、无真发（已由 result_json + approval_audit 0 新增证明）；「capability 级 externalEffect=true」≠「实际发生了外发动作」。
+
+## 2026-08-08 Foundation PR2 wiring + submit lock（已合 main）
+
+**问题**：PR2/PR3 合入后 integrity 未强制进执行路径；submit 缺 expected hash 原子锁。
+
+**已合**：
+- Registry [#6](https://github.com/gifted-professor/xhs-registry/pull/6) merge `b1e5e70`（ExecutionPlan 强制、stable operationKey、constraints、hash 重算、route allow+decisionId、v2 receipt、expected* 发送）
+- Routing [#43](https://github.com/gifted-professor/xhs-device-agent/pull/43) merge `fb7747f`（submit 内 expected* 原子比较；先合 routing 再合 registry）
+
+**交接**：`HANDOFF-2026-08-08-foundation-pr4-gate.md`  
+**证据**：`docs/plans/2026-08-08-foundation-pr2-wiring-closure.md`  
+**PR4 计划**：`docs/plans/2026-08-08-foundation-pr4-plan.md`  
+**红线**：仍 0 Windows deploy/reload · 0 Pilot，直至 PR4 闸 A/B 显式开闸。
 
 ## 2026-08-08 P1 live canary L1–L4（非支付；人授权：不碰支付可不请示）
 

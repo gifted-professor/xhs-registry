@@ -1,0 +1,216 @@
+{
+  "schemaId": "xhs.foundation-pr4-scope.v1",
+  "title": "Foundation PR4: DeployShadow then (separate gate) ActivatePilot",
+  "branch": "foundation/pr4-deploy-shadow",
+  "status": "gate-b-p4-executed-price-regression-failed",
+  "redLineDistinction": "capability-level externalEffect=true (publish/dry_run family metadata) is NOT actual external action. Pilot actor claude-pilot-20260809 has exactly 4 succeeded jobs with external_effect=1, all dry_run family (no submit/publish): job_d09e94da (xianyu.publish.input_dry_run), job_29affad6 (open_dry_run), job_eab8bc0b (image_dry_run), job_b849c7df (full_dry_run). Capability-level flag only: no submit/publish action (result_json labelled non-real-publish; input text only; image upload select-pick 下一步(2) 完成 with no publish tap; full_dry_run saveDraft only when true → no draft written; all restoration to launcher), approval_audit 0 new (still 2 pre-pilot rows), no financial effect. Zero forbidden capabilities (douyin.observe.share_link / xhs.comment.send / xhs.follow.ensure) and zero financial_commit-class capability executed in the pilot window (2026-08-08T18:00Z+). Pilot-window scope: 18 jobs total, 100% actor=claude-pilot-20260809, 0 non-terminal; 46 control.db non-terminal rows are all pre-pilot historical (2026-07-24~08-06, codex/hermes/grok/cursor/human:user-authorized), including historical douyin.observe.share_link recovery×3 and xhs.comment.send ambiguous×6+cancelled×1 (all pre-pilot, non-pilot-actor, never succeeded) — outside the red-line pilot-window scope. Added 2026-08-09 after independent review refuted the over-broad 'no external_effect=1 job' acceptance criterion; audit artifacts were already accurate (see observedAfter.gateB.p3Jobs).",
+  "auditVersion": "2",
+  "auditNote": "H-01 fix (PR #7 REQUEST CHANGES): expected (authorized) values and observed (post-deployment) values are now separate and immutable. Original authorized values recovered from git history (commit e0db476, files.json status=draft-plan-review-closed) and gate-A backup dir. Never overwrite authorizedBefore with observedAfter.",
+  "authorizedBefore": {
+    "authorizedAt": "2026-08-08T19:14Z (PR4-0 plan review closed, commit e0db476)",
+    "source": "git e0db476 (PR4-0 plan package, status=draft-plan-review-closed) + backups/registry-deploy-shadow-pr4-20260809-003955/control/",
+    "routingTargetCommit": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+    "registryTargetCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+    "liveRoutingCheckout": "42b89640e5b2ecc20bc01bb22e68d26b787acd3f",
+    "liveRoutingBranch": "foundation/pr2-submit-integrity-lock",
+    "liveTaskLaunchCommit": "524c21e540e951d1174cbfecaca0049b3c4058c7",
+    "liveRegistryWorkingTree": "6853d3bb5045b390c2081903307574d3e35b566d",
+    "liveCrossRepoRegistryCommit": "446494ab7d03382b268ff973ac12951cb13fc4c6",
+    "liveCrossRepoWindowsRegistryCommit": "5e25df8e62b5a64f8ad4e86173b4975c013e18a1",
+    "taskLaunchSha256Authorized": "50f92183a9635919ddb54b00fe5a7a4e50ee895bbcbcc23eb8fd211d13f29f37",
+    "crossRepoReleaseSha256Authorized": "7200514a2db8fc95adab2aa092f549f9561fa8e2aa1c6c5a93449f2dd97c9982",
+    "authorizedAutonomyPolicyMode": "shadow",
+    "authorizedPilotActors": [],
+    "authorizedPilotAliases": []
+  },
+  "observedAfter": {
+    "gateA": {
+      "observedAt": "2026-08-09T00:49Z",
+      "releaseId": "rel-shadow-2026-08-08-foundation-pr4",
+      "routingCheckout": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+      "routingBranch": "main",
+      "taskLaunchCommit": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+      "registryCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+      "windowsRegistryCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+      "policyMode": "shadow",
+      "effectiveDecisionSource": "shadow",
+      "pilotConfigured": false,
+      "pilotActors": [],
+      "pilotAliases": [],
+      "controlPlaneHealth": "up-restored-20260809T0049Z",
+      "registryDiskSha256Lf": "151aa93bd8d0d2b4bb40863494f47ec70625f8fa459f8e7a72d14e2107b7575b",
+      "goProbes": "1-10 green",
+      "probe6": "PASS_WITH_WAIVER",
+      "probe6Reason": "agent-entry release schema has no pilotConfigured/commit fields; semantics proven by /control/v1/health + cross-repo-release.json",
+      "backupDir": "backups/registry-deploy-shadow-pr4-20260809-003955",
+      "rollbackAnchorsSha256": "4cecaf51efb74a00dbb437a200c42d151ddb326cf9c2b4cfec434bf07a0aa481",
+      "rollback": "not-triggered"
+    },
+    "gateB": {
+      "observedAt": "2026-08-09T01:15Z",
+      "releaseId": "rel-pilot-2026-08-09-foundation-pr4",
+      "autonomyPolicyMode": "nonpayment_v1",
+      "effectiveDecisionSource": "deployed-runtime",
+      "pilotConfigured": true,
+      "pilotActors": [
+        "claude-pilot-20260809"
+      ],
+      "pilotAliases": [
+        "01",
+        "02",
+        "03",
+        "04"
+      ],
+      "controlPlanePolicyMode": "nonpayment_v1-active-true-pilotOnly-true",
+      "taskLaunchSha256Observed": "0262d4d546adf9da781537d66f8723ce0634b66feead297ac23bba2aa6f56ecc",
+      "crossRepoReleaseSha256Observed": "91a9b77d3ec33963531cf68520cb2fe39b43f45e05448e24b50c24e7af2fe99f",
+      "goProbes": "1-8 green",
+      "probe9": "NO_TARGET",
+      "probe9Reason": "29 capabilities have effect classes none/publish/reversible/social; no financial_commit capability to test against",
+      "p1Jobs": "3/3 succeeded (device.list, xianyu.observe.snapshot, wechat.observe.probe on 01)",
+      "p2Jobs": "6/7 succeeded across 02/03/04 (02: device.list+snapshot+wechat.probe; 03: device.list+snapshot; 04: device.list). 1 env failure: xhs.observe.feed on 04 ADAPTER_HTTP_UNAVAILABLE (loopback 17896 unreachable; same device device.list ok → transport issue not capability/isolated-block). All approvalRequired=false externalEffect=false; 4/4 online quarantine=0; leases empty.",
+      "p3Jobs": "dry_run 试写 on 01: input_dry_run + open_dry_run succeeded (no publish action; capability-level externalEffect=true but audit shows input-only, no submit); image_dry_run VERIFICATION_FAILED image-album-missing (historical staging album XianyuStg2 no longer on phone; clean fail, no side effects). Probes: approval_audit 0 new (still 2 pre-pilot), financial jobs 0, leases empty. P3b (2026-08-09, human-approved '推图 + 补 dry_run 矩阵'): staging images re-pushed via gateway adb_shell (screencap 2 imgs → MEDIA_SCANNER → MediaStore confirmed _id 1000008568/9 → sha256sum cfa031f7...), then image_dry_run job_eab8bc0b SUCCEEDED (images-uploaded, 2 imgs selected 下一步(2) 完成, no publish tap) and full_dry_run job_b849c7df SUCCEEDED (r1 job_ffcc0c64 honestly FAILED price:price-unverified — fillPriceField settle(220) keypad interval <450ms precondition drops digits; r2 re-run without price param, open→images→description→final capture, saveDraft false→no draft, restoration launcher, output.ok=true). Post-probe: extEffect succeeded=4 (all dry_run, no real publish), approval_audit still 2, financial 0, leases empty, pilot-window (2026-08-08T18:00Z+) 18 jobs 100% claude-pilot-20260809 with 0 forbidden/financial/0 non-terminal; 46 control.db non-terminal all pre-pilot historical.",
+      "p4Jobs": "canary sessions on 01 (Tier 2 E1/R1, session acquire --canary): xiaowei.explorer.primitive {primitive:screen} succeeded (job_bf77511d, screen.png 2.1MB showing xianyu publish editor w/ P3 draft; session released:true) + xianyu.probe.flutter_pointer_tap {saveDraft:false} succeeded (job_16f32260, typed-http 3 taps 0 fallback, restoration returned to launcher, discarding the P3 unsent draft). Both approvalRequired=false externalEffect=false canary=true. Post probes: control plane nonpayment_v1/active/pilotOnly/pilotConfigured, activeLeases=0, leases=0, sessions=0, approval_audit still 2, 4/4 online no quarantine, no financial_commit. Finding: long-running canary action auto-releases session at completion (manual release then SESSION_NOT_FOUND); interactive lease row self-swept by cleanupExpiredLeases after expires_at (no quarantine, no recovery).",
+      "backupDir": "backups/registry-activate-pilot-pr4-20260809-011332",
+      "rollbackAnchorsSha256": "b57187f3ade38cb518325444f7bd8bf25ca401e98803c8e0c81ca9c9b1d477b6",
+      "disposition": "keep-pilot-active-observe (human decision 2026-08-09 after P1-P4 full chain green; no rollback; follow-ups: image/full_dry_run staging images DONE 2026-08-09 P3b (matrix 4/4 green), full_dry_run price param blocked on fillPriceField keypad-interval fix, codex-luna second actor, runbook 11 branch cleanup)"
+    }
+  },
+  "authorization": {
+    "sourceImplementation": true,
+    "writePlanDocs": true,
+    "windowsDeploy": true,
+    "controlPlaneReload": true,
+    "registryReload": true,
+    "deviceActions": true,
+    "jobOrSessionSubmit": true,
+    "activatePilot": true,
+    "realDeviceCanary": false
+  },
+  "gates": {
+    "A_DeployShadow": "executed-2026-08-09T00:49Z-go-probes-1-10-green",
+    "B_ActivatePilot": "executed-2026-08-09T01:15Z-go-probes-1-8-green-p1-3-succeeded-p2-6-of-7-succeeded-4-of-4-machines-covered-p3-dry-run-2-succeeded-1-clean-fail-p4-canary-2-succeeded-p3-draft-sideeffect-cleared; 2026-08-09 dry_run matrix completed (P3b): image_dry_run job_eab8bc0b succeeded + full_dry_run job_b849c7df succeeded (r1 price-keypad fail honestly recorded) — 4/4 dry_run family green",
+    "preGateA_controlPlaneLiveness": "required",
+    "B_evidenceConditional": "PR7-review-REQUEST-CHANGES-conditional-trust; all 7 findings closed in evidenceClosure (2026-08-09)"
+  },
+  "evidenceClosure": {
+    "auditVersion": "2",
+    "reviewRef": "PR #7 independent review — REQUEST CHANGES (H-01/H-02/H-03 High; M-01/M-02/M-03/M-04 Medium)",
+    "closureAt": "2026-08-09T02:30Z",
+    "items": {
+      "H-01": {
+        "verdict": "fixed",
+        "evidence": "auditVersion 2 splits authorizedBefore (immutable pre-authorization snapshot; source git e0db476 + backups/registry-deploy-shadow-pr4-20260809-003955/control/, byte-verified) from observedAfter (gateA/gateB execution sub-blocks). observedAfter never overwrites authorizedBefore. See auditNote."
+      },
+      "H-02": {
+        "verdict": "fixed",
+        "evidence": "Gate A probe 6 literal deviation recorded: observedAfter.gateA.probe6=PASS_WITH_WAIVER + probe6Reason (agent-entry release schema has no pilotConfigured/commit fields; semantics proven via /control/v1/health + cross-repo-release.json, both in observedAfter.gateA)."
+      },
+      "H-03": {
+        "verdict": "fixed",
+        "evidence": "Scoped receipt suite selection is constrained by a mechanical, pre-existing gate — not cherry-picked after results. (a) scripts/assert-release-gates.mjs @ fb7747f (routing main, unchanged by this PR) hard-codes 8 RUNTIME_CRITICAL_TEST_MARKERS, requires passed>=15, failed=0, gitCommit==HEAD, command citing >=2 markers, receipt <=48h fresh — the stale receipt (fb4f90be, 4 passed) blocked startup, proving the gate is mechanical. (b) failed=0 forces any known-failing suite out of a passing receipt; the excluded control-plane-core.test.mjs failure (migrateLegacyPending JOB_WAIT_TIMEOUT) was proven pre-existing via `git diff 42b8964 fb7747f` byte-identical. (c) Timing (committer dates, registry repo): runbook draft 84a8a3e @2026-08-08T16:35:37Z → human review a8ea70f @2026-08-09T00:33:17Z → receipt written @00:47:16.594Z (disk mtime == completedAt; runtime/ gitignored) → execution record de4aec0 @00:51:49Z. Human review precedes test execution. (d) Scope decision recorded live in outbox/claude-bridge/20260809-deploy-shadow-execution.md §2: human approved 'run tests, fill receipt', then approved scoped receipt '6 all-green critical suites (41/0), failing test recorded as debt, not fabricated'. (e) Receipt tamper-evident: write-release-test-receipt.mjs @ fb7747f binds gitCommit+command+passed+failed+completedAt into bodyHash a10f72a1...; on-disk sha256 abe90b90...  Residual open question (flagged, not resolved): assert-release-gates.test.mjs, 1 of the 8 eligible markers, is not cited in the run command; exclusion reason not recorded at execution time."
+      },
+      "M-01": {
+        "verdict": "fixed",
+        "evidence": "migrateLegacyPending returns null when pilotOnly===true (control-plane/lib/control-plane.mjs:363) so the pilot path never migrates legacy pending; live control.db has 0 waiting approvals (12 rows all terminal approve/deny). Recorded in repositories.routing.notes."
+      },
+      "M-02": {
+        "verdict": "fixed",
+        "evidence": "Full SHA-256 everywhere. authorizedBefore: task-launch 50f92183a9..., cross-repo 7200514a2d... — both byte-verified against the actual gate-A backup files (sha256sum). observedAfter.gateB: task-launch 0262d4d5..., cross-repo 91a9b77d.... Live git commits full-length (446494ab7d..., 5e25df8e62..., 1e1d7f6cc4...)."
+      },
+      "M-03": {
+        "verdict": "fixed",
+        "evidence": "PR body wording fixed to state: this PR is docs-only; it does not modify runtime code — it records the Windows Shadow service deployment, config writes (task-launch/cross-repo-release.json), and control-plane process reload that already occurred via the controlled ops flow (Gate A/B execution under human authorization), with byte-verified SHAs in backups/."
+      },
+      "M-04": {
+        "verdict": "fixed",
+        "evidence": "Executable two-level rollback, byte-verifiable. (1) Gate-B undo (pilot → shadow-deployed): restore backups/registry-activate-pilot-pr4-20260809-011332/control/{task-launch,cross-repo-release}.json (task-launch @fb7747f, releaseId=rel-shadow-2026-08-08-foundation-pr4, mode=shadow; sha 9cea710b/67c2f61c), reload control plane, confirm shadow active=false pilotConfigured=false. (2) Gate-A undo (DeployShadow → pre-deploy): restore backups/registry-deploy-shadow-pr4-20260809-003955/control/{task-launch,cross-repo-release}.json + registry.mjs + registry.db (task-launch @524c21e, releaseId=rel-shadow-2026-08-02-repair-consumer-v1, sha 50f92183/7200514a == authorizedBefore exactly), redeploy registry.mjs, confirm 17930 health + gitCommit. Barrier: never roll back with non-terminal work — control-plane activeLeases must be 0 and approvals queue empty before restore; pilot idle state keeps both empty."
+      }
+    }
+  },
+  "deployExecution": {
+    "executedAt": "2026-08-09T00:49Z",
+    "backupDir": "backups/registry-deploy-shadow-pr4-20260809-003955",
+    "controlPlaneRecovery": "D0-main-flow-first-startup-up",
+    "receiptScope": "6-runtime-critical-suites-41-pass-0-fail",
+    "knownFailingEnvDebt": "control-plane-core.test.mjs:644 migrateLegacyPending JOB_WAIT_TIMEOUT (pre-existing; identical code at 42b8964; not in receipt)",
+    "rollback": "not-triggered"
+  },
+  "mergeOrder": [
+    "routing",
+    "registry"
+  ],
+  "policyModeExact": "shadow",
+  "forbiddenUntilGateA": [
+    "Windows task reload",
+    "DeployShadow execution",
+    "task-launch rewrite",
+    "cross-repo-release rewrite",
+    "registry.mjs SHA256 push to live",
+    "open Gate A while control plane down",
+    "treat registry-degraded leases=0 as green"
+  ],
+  "forbiddenUntilGateB": [
+    "ActivatePilot",
+    "non-empty pilotActors",
+    "non-empty pilotAliases",
+    "non-shadow policyMode",
+    "live canary",
+    "payment path",
+    "final commit"
+  ],
+  "repositories": {
+    "routing": {
+      "name": "xhs-device-agent",
+      "allowedPrefixes": [
+        "docs/plans/2026-08-08-foundation-pr4-deploy-shadow.md",
+        "docs/plans/2026-08-08-foundation-pr4-plan.md"
+      ],
+      "notes": "DeployShadow: checkout now main @ fb7747f. Pending: runbook 11 cleanup (remote prune + branch deletion needs human confirmation); migrateLegacyPending env-debt test needs upstream fix (PR + human review). Gate B M-01 disposition: migrateLegacyPending returns null when pilotOnly===true (control-plane.mjs:364), so pilot path never migrates legacy pending; current DB has 0 waiting approvals (12 rows all terminal approve/deny)."
+    },
+    "registry": {
+      "name": "xhs-registry",
+      "allowedPrefixes": [
+        "docs/plans/2026-08-08-foundation-pr4-plan.md",
+        "docs/plans/2026-08-08-foundation-pr4-baseline.md",
+        "docs/plans/2026-08-08-foundation-pr4.files.json",
+        "docs/plans/2026-08-08-foundation-pr4-progress.md",
+        "docs/plans/2026-08-08-foundation-pr4-runbook.md",
+        "HANDOFF-2026-08-08-foundation-pr4-gate.md",
+        "PROGRESS.md"
+      ],
+      "notes": "DeployShadow executed: registry.mjs deployed as LF blob 151aa93b (disk=blob). Gate A passed 2026-08-09T00:49Z. Gate B (ActivatePilot) executed 2026-08-09T01:15Z: P1 3 read-only jobs, P2 6/7 across 4 machines, P3 dry_run 2 green + 1 clean fail, P4 canary 2/2 green (explorer.primitive screen + flutter_pointer_tap saveDraft:false, P3 draft side-effect cleared). Probe 10 verified blob vs deployed file byte-equal. PR #7 REQUEST CHANGES: all 7 findings (H-01/H-02/H-03, M-01/M-02/M-03/M-04) closed in evidenceClosure (2026-08-09), verdict=fixed each."
+    }
+  },
+  "priceRegression": {
+    "pr44Commit": "48e71545437c89319c9820fd2cfeb68c9d26023a",
+    "pr44Fix": "settle(220)->APP_NUMPAD_SETTLE_MS(450) in fillPriceField keypad loop",
+    "deployedAt": "2026-08-09T18:46:48+08:00 (xianyu-operator.mjs disk mtime; routing checkout main @48e7154)",
+    "crossRepoRelease": {
+      "deviceAgentCommit": "48e71545437c89319c9820fd2cfeb68c9d26023a",
+      "taskLaunchCommit": "48e71545437c89319c9820fd2cfeb68c9d26023a"
+    },
+    "regressionRun": {
+      "device": "01",
+      "actor": "claude-pilot-20260809",
+      "mode": "publish-dry-run",
+      "price": "199",
+      "result": "FAILED price:price-unverified",
+      "noPublish": true,
+      "noDraft": true,
+      "restoredTo": "xianyu-main-activity",
+      "sideEffects": 0
+    },
+    "rootCause": "PR #44 220->450ms fix addressed a NON-EXISTENT key-drop (199 entered correctly under both intervals, proven by fee calc). Real bug: price sheet 确定 commit never writes back to compose page (latent never-validated flow). gap4 2026-07-22 evidence was a false positive (read open-sheet field, not compose page).",
+    "excludedByDiag": [
+      "determine-tap",
+      "back",
+      "focus(focused-const-false)",
+      "re-confirm",
+      "scroll-re-render",
+      "collapse-keypad(no-hidden-commit)",
+      "promo-banner-tap"
+    ],
+    "closureGate": "OPEN - price read-back does not match; needs upstream commit-step fix + human review before re-regression"
+  }
+}
