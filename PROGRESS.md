@@ -1,8 +1,19 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · GO 2026-08-09T01:15Z · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · **P1 3/3 + P2 6/7（4 台各 ≥1 只读）+ P3 dry_run 矩阵补全 4 绿 1 干净失败 + P4 canary 2/2 绿（P3 草稿副作用已清）** · 试点全链路 P1-P4 完成，dry_run 矩阵补绿，观察期
+> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · **PR #45-#50 闲鱼 standalone price 持久化验证闭环已完成**。
 >
-> 2026-08-09 **PR #44（routing）合入部署 `48e7154`（fillPriceField settle 220→450）→ 带 price 回归 FAILED `price:price-unverified`**：PR #44 修的是**不存在**的丢键问题（220/450ms 下 199 都正确输入）；真因 = price sheet「确定」commit 从不写回 compose page（latent 从未验证流程）。**闭环 gate 保持 OPEN**，待上游 commit-step 新 fix + human review（见 PR4-5 节）。
+> routing exact deployed merge `cc7e526e4e6b9eab047afb5c3daa964852af79e7`；03 正式 leased `xianyu.publish.full_dry_run`（price=199、saveDraft=false）`job_425d8d61-f037-411e-85ef-fcdd12e3ea44` / `run_d9c72468-be83-4cb6-9819-d98e2c6e7f49` **succeeded**：回开价格面板精确读回 `¥199.00`，最终 compose 为 `¥199.00`，verification/restoration 均成功并回 launcher，未发布、未保存草稿，终态 lease=0。原 price accessibility active blocker 已 resolved。
+
+## 2026-08-09 PR #45-#50 — 闲鱼 price 两阶段持久化回读闭环
+
+**总裁决：APPROVE，已合并、部署并真机验收。** 原 PR #45 的方向正确，但逐文件严格审查与正式设备证据先后暴露：sheet/compose 分类不足、compose 价格行邻域不稳定、视觉写回后 a11y 仍旧值，以及 post-confirm compose 可能完全不暴露 `priceField`。修复按证据拆为 PR #45-#50，全部经独立 review 后合并；最终运行提交为 `cc7e526e4e6b9eab047afb5c3daa964852af79e7`。
+
+- **实现**：首次 sheet 输入/确认后只证明关闭；再按首次审计的价格行 bounds 重开 sheet；只对价格字段做规范化后的精确金额匹配；读回后再次关闭并证明最终 compose。缺失 `priceField` 时，sheet 控件证据与 compose 可见性独立分类；任一阶段失败均 fail closed，禁止后续保存草稿或发布。
+- **测试/部署闸门**：PR #50 focused `68/68`、release-critical `81/81`、`npm run check` 通过；release receipt、main/origin、task-launch 四者均锁定 `cc7e526…`，dirty=false，自动批准/standing-grant 均 OFF，reload 前后 activeLeases=0、runningJobs=0。
+- **正式验收**：03 readiness 先由只读 `xianyu.observe.snapshot` `job_a3d9bc83-2d1c-4540-b983-373b5a088a35` 刷新为 ready；最终 job `job_425d8d61-f037-411e-85ef-fcdd12e3ea44` 持有可见 lease `lease_1ae6f9f2-2a35-4f3f-9fca-4e65e22b2518`，run manifest 锁定 `cc7e526…`，终态 succeeded。
+- **证据**：`xianyu-price-persisted-REPLACE_SERIAL_03.png` 显示价格字段 `¥199.00`（同屏服务费 `-¥3.18`、到手价 `¥195.82`，未误命中）；`xianyu-publish-final-REPLACE_SERIAL_03.png` 显示最终 compose `¥199.00`；result verification/restoration 均 `ok:true`，回 `com.miui.home.launcher.Launcher`。
+- **安全边界**：参数 `saveDraft:false`；未执行 publish tap、draft save、设备旁路、control.db 写入或人工批准；终态 activeLeases=0、runningJobs=0，03 ready=yes/unresolvedFailure=none。
+- **留痕**：`pitfall-xianyu-price-compose-a11y-stale-readback-20260809` 已转 `resolved`；新增 `recipe-xianyu-price-two-stage-persisted-readback-20260809`（`verifyMode=constraint`）。
 
 ## 2026-08-08/09 Foundation PR4 — ActivatePilot（闸 B，P1-P4 已过）
 
