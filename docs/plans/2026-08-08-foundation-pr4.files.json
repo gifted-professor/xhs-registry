@@ -2,7 +2,7 @@
   "schemaId": "xhs.foundation-pr4-scope.v1",
   "title": "Foundation PR4: DeployShadow then (separate gate) ActivatePilot",
   "branch": "foundation/pr4-deploy-shadow",
-  "status": "gate-b-p4-executed",
+  "status": "gate-b-p4-executed-price-regression-failed",
   "redLineDistinction": "capability-level externalEffect=true (publish/dry_run family metadata) is NOT actual external action. Pilot actor claude-pilot-20260809 has exactly 4 succeeded jobs with external_effect=1, all dry_run family (no submit/publish): job_d09e94da (xianyu.publish.input_dry_run), job_29affad6 (open_dry_run), job_eab8bc0b (image_dry_run), job_b849c7df (full_dry_run). Capability-level flag only: no submit/publish action (result_json labelled non-real-publish; input text only; image upload select-pick 下一步(2) 完成 with no publish tap; full_dry_run saveDraft only when true → no draft written; all restoration to launcher), approval_audit 0 new (still 2 pre-pilot rows), no financial effect. Zero forbidden capabilities (douyin.observe.share_link / xhs.comment.send / xhs.follow.ensure) and zero financial_commit-class capability executed in the pilot window (2026-08-08T18:00Z+). Pilot-window scope: 18 jobs total, 100% actor=claude-pilot-20260809, 0 non-terminal; 46 control.db non-terminal rows are all pre-pilot historical (2026-07-24~08-06, codex/hermes/grok/cursor/human:user-authorized), including historical douyin.observe.share_link recovery×3 and xhs.comment.send ambiguous×6+cancelled×1 (all pre-pilot, non-pilot-actor, never succeeded) — outside the red-line pilot-window scope. Added 2026-08-09 after independent review refuted the over-broad 'no external_effect=1 job' acceptance criterion; audit artifacts were already accurate (see observedAfter.gateB.p3Jobs).",
   "auditVersion": "2",
   "auditNote": "H-01 fix (PR #7 REQUEST CHANGES): expected (authorized) values and observed (post-deployment) values are now separate and immutable. Original authorized values recovered from git history (commit e0db476, files.json status=draft-plan-review-closed) and gate-A backup dir. Never overwrite authorizedBefore with observedAfter.",
@@ -52,8 +52,15 @@
       "autonomyPolicyMode": "nonpayment_v1",
       "effectiveDecisionSource": "deployed-runtime",
       "pilotConfigured": true,
-      "pilotActors": ["claude-pilot-20260809"],
-      "pilotAliases": ["01", "02", "03", "04"],
+      "pilotActors": [
+        "claude-pilot-20260809"
+      ],
+      "pilotAliases": [
+        "01",
+        "02",
+        "03",
+        "04"
+      ],
       "controlPlanePolicyMode": "nonpayment_v1-active-true-pilotOnly-true",
       "taskLaunchSha256Observed": "0262d4d546adf9da781537d66f8723ce0634b66feead297ac23bba2aa6f56ecc",
       "crossRepoReleaseSha256Observed": "91a9b77d3ec33963531cf68520cb2fe39b43f45e05448e24b50c24e7af2fe99f",
@@ -129,7 +136,10 @@
     "knownFailingEnvDebt": "control-plane-core.test.mjs:644 migrateLegacyPending JOB_WAIT_TIMEOUT (pre-existing; identical code at 42b8964; not in receipt)",
     "rollback": "not-triggered"
   },
-  "mergeOrder": ["routing", "registry"],
+  "mergeOrder": [
+    "routing",
+    "registry"
+  ],
   "policyModeExact": "shadow",
   "forbiddenUntilGateA": [
     "Windows task reload",
@@ -171,5 +181,36 @@
       ],
       "notes": "DeployShadow executed: registry.mjs deployed as LF blob 151aa93b (disk=blob). Gate A passed 2026-08-09T00:49Z. Gate B (ActivatePilot) executed 2026-08-09T01:15Z: P1 3 read-only jobs, P2 6/7 across 4 machines, P3 dry_run 2 green + 1 clean fail, P4 canary 2/2 green (explorer.primitive screen + flutter_pointer_tap saveDraft:false, P3 draft side-effect cleared). Probe 10 verified blob vs deployed file byte-equal. PR #7 REQUEST CHANGES: all 7 findings (H-01/H-02/H-03, M-01/M-02/M-03/M-04) closed in evidenceClosure (2026-08-09), verdict=fixed each."
     }
+  },
+  "priceRegression": {
+    "pr44Commit": "48e71545437c89319c9820fd2cfeb68c9d26023a",
+    "pr44Fix": "settle(220)->APP_NUMPAD_SETTLE_MS(450) in fillPriceField keypad loop",
+    "deployedAt": "2026-08-09T18:46:48+08:00 (xianyu-operator.mjs disk mtime; routing checkout main @48e7154)",
+    "crossRepoRelease": {
+      "deviceAgentCommit": "48e71545437c89319c9820fd2cfeb68c9d26023a",
+      "taskLaunchCommit": "48e71545437c89319c9820fd2cfeb68c9d26023a"
+    },
+    "regressionRun": {
+      "device": "01",
+      "actor": "claude-pilot-20260809",
+      "mode": "publish-dry-run",
+      "price": "199",
+      "result": "FAILED price:price-unverified",
+      "noPublish": true,
+      "noDraft": true,
+      "restoredTo": "xianyu-main-activity",
+      "sideEffects": 0
+    },
+    "rootCause": "PR #44 220->450ms fix addressed a NON-EXISTENT key-drop (199 entered correctly under both intervals, proven by fee calc). Real bug: price sheet 确定 commit never writes back to compose page (latent never-validated flow). gap4 2026-07-22 evidence was a false positive (read open-sheet field, not compose page).",
+    "excludedByDiag": [
+      "determine-tap",
+      "back",
+      "focus(focused-const-false)",
+      "re-confirm",
+      "scroll-re-render",
+      "collapse-keypad(no-hidden-commit)",
+      "promo-banner-tap"
+    ],
+    "closureGate": "OPEN - price read-back does not match; needs upstream commit-step fix + human review before re-regression"
   }
 }
