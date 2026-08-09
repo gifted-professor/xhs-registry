@@ -202,9 +202,20 @@ curl.exe -s -m 5 http://127.0.0.1:17930/api/health
 - 若踩新坑 → 知识库 pitfall（`appliesTo`/`verifyMode`）
 - 更新 `files.json` `live*` baseline 为部署后值
 
-## 10. 待解决项（人审时确认）
+## 10. 人审结论（2026-08-09 已批）
 
-- D0：控制面恢复失败是否按主流程推进（runbook 默认：是，记录为已知基线）
-- D1：回滚时 `requireMainOrigin` vs feature 分支的取舍（runbook 默认：(a) 事故留痕）
-- `registryCommit`/`windowsRegistryCommit` 收口是否有消费者依赖分叉
-- 本 runbook 文件需在 commit 时扩进 `files.json` registry `allowedPrefixes`
+- **D0 已批**：控制面恢复失败 → 按主流程推进，控制面在部署 reload 时以 main @ `fb7747f` 首次拉起；预部署态 down 记为已知基线，回滚不虚构旧 PID。
+- **D1 已批**：回滚默认走 (a)——routing 留可启动的 main 旧 pin，书面记录与真实预部署态不一致并事故留痕。人明确要求：**找时间开始清除旧的 feature 分支 / 陈旧 ref / 漂移 checkout 状态**（见 §11）。
+- **`windowsRegistryCommit` 已批**：统一为与 `registryCommit` 同值（`b1e5e70…`）；执行时若有消费者依赖旧分叉需回归。
+- `files.json` registry `allowedPrefixes` 已扩进本 runbook（`84a8a3e`）。
+
+## 11. 旧状态清理（人批，非 DeployShadow 前置）
+
+「乱七八糟的原始版本」主要指：routing checkout 停在 feature 分支 `foundation/pr2-submit-integrity-lock` @ `42b8964`（非 main）、双仓 `origin/main` 陈旧（`3b1c9ae` / `a305f59`）、routing 仓大量未合入本地分支（`codex/*`、`repair/*`、`foundation/pr2-submit-integrity-lock` 等）与陈旧 remote-tracking ref。
+
+- **DeployShadow 本身已清掉核心项**：§4 `git switch main` + `git reset --hard fb7747f` 收口 checkout；§2 fetch 后 `origin/main` 对齐。
+- **追加清理（执行 DeployShadow 后做，或另排窗口）**：
+  1. routing/registry 两仓 `git remote prune origin` + 删除已合入/废弃的本地分支（先列 `git branch -vv` 审一遍再删，**贴人确认**）
+  2. 归档旧 release 产物（`rel-shadow-2026-08-02-repair-consumer-v1` 相关 manifest/backup 移 archive）
+  3. 清理后重采 baseline，`files.json` `live*` 更新为干净态
+- 不碰：任何正在运行的服务的运行目录；清理只动 git ref / 归档，不动 live 进程。

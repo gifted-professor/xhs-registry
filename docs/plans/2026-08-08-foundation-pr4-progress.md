@@ -13,8 +13,9 @@
 - [x] 交互实测加厚 2026-08-09（控制面 down、CRLF、双仓缺对象、`requireMainOrigin` vs feature 分支）→ **已补进 plan/baseline/files.json**
 - [x] PR4-0 docs 提交 `e0db476`（`foundation/pr4-deploy-shadow`）
 - [x] PR4-1 DeployShadow **runbook Draft**（`2026-08-08-foundation-pr4-runbook.md`；fetch/对齐、备份锚点、git-show LF 部署、GO 探针、回滚 D0/D1）
+- [x] **人审 runbook 通过**（2026-08-09）：D0 按主流程 / D1 事故留痕 + 旧状态清理入 §11 / `windowsRegistryCommit` 统一
 - [ ] routing 仓对称指针（PR4-1 前补）
-- [ ] **人审 runbook Draft** → 之后才谈闸 A 执行
+- [ ] 恢复控制面 + 重采 liveness → 人显式批 **闸 A** 才执行
 
 ## 未做（红线）
 
@@ -25,8 +26,10 @@
 
 ## 下一步
 
-1. **人审 PR4-1 runbook Draft**（含决策点 D0 控制面恢复 / D1 回滚 `requireMainOrigin` 取舍、`windowsRegistryCommit` 收口）
-2. 恢复控制面并重采 baseline liveness 后，人显式批 **闸 A** 才 DeployShadow
+1. （可选）补 routing 仓对称指针
+2. **恢复控制面 17920** + 重采 liveness baseline
+3. 预检 #1–#5 全绿后，人显式批 **闸 A** 才执行 runbook（DeployShadow）
+4. DeployShadow 后按 runbook §11 清旧分支/陈旧 ref（贴人确认再删）
 
 ## 取消
 
