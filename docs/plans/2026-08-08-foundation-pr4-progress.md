@@ -172,10 +172,10 @@
 
 ## 下一步
 
-1. **试点全链路 P1-P4 完成** → 待人裁定：收口回滚到 shadow（走 §6 两级回滚），还是保持 pilot active 观察，还是补 image/full_dry_run
-2. ~~PR7 review 继续~~ → **已完成**：7/7 闭合（PR4-4），commit 提交到分支（见 git 状态）
+1. **处置已定**（2026-08-09 人裁决）：**保持 pilot active 观察**（`nonpayment_v1` 维持，不回滚）。`files.json` `disposition=keep-pilot-active-observe` 已记录
+2. 观察期后续（非阻塞）：补 staging 图（`XianyuStg2`）跑 image/full dry_run 补矩阵；codex-luna 就绪后加入 pilotActors + reload
 3. runbook §11：列 `git branch -vv` 审一遍 → **贴人确认**后 `remote prune` + 删已合/废弃分支
-4. codex-luna 就绪 → 加入 pilotActors + reload
+4. ~~PR7 review 继续~~ → **已完成**：7/7 闭合（PR4-4），commit 提交到分支（见 git 状态）
 
 ## 取消
 

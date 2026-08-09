@@ -64,7 +64,8 @@
       "p3Jobs": "dry_run 试写 on 01: input_dry_run + open_dry_run succeeded (no publish action; capability-level externalEffect=true but audit shows input-only, no submit); image_dry_run VERIFICATION_FAILED image-album-missing (historical staging album XianyuStg2 no longer on phone; clean fail, no side effects). Probes: approval_audit 0 new (still 2 pre-pilot), financial jobs 0, leases empty.",
       "p4Jobs": "canary sessions on 01 (Tier 2 E1/R1, session acquire --canary): xiaowei.explorer.primitive {primitive:screen} succeeded (job_bf77511d, screen.png 2.1MB showing xianyu publish editor w/ P3 draft; session released:true) + xianyu.probe.flutter_pointer_tap {saveDraft:false} succeeded (job_16f32260, typed-http 3 taps 0 fallback, restoration returned to launcher, discarding the P3 unsent draft). Both approvalRequired=false externalEffect=false canary=true. Post probes: control plane nonpayment_v1/active/pilotOnly/pilotConfigured, activeLeases=0, leases=0, sessions=0, approval_audit still 2, 4/4 online no quarantine, no financial_commit. Finding: long-running canary action auto-releases session at completion (manual release then SESSION_NOT_FOUND); interactive lease row self-swept by cleanupExpiredLeases after expires_at (no quarantine, no recovery).",
       "backupDir": "backups/registry-activate-pilot-pr4-20260809-011332",
-      "rollbackAnchorsSha256": "b57187f3ade38cb518325444f7bd8bf25ca401e98803c8e0c81ca9c9b1d477b6"
+      "rollbackAnchorsSha256": "b57187f3ade38cb518325444f7bd8bf25ca401e98803c8e0c81ca9c9b1d477b6",
+      "disposition": "keep-pilot-active-observe (human decision 2026-08-09 after P1-P4 full chain green; no rollback; follow-ups: image/full_dry_run staging images, codex-luna second actor, runbook 11 branch cleanup)"
     }
   },
   "authorization": {
