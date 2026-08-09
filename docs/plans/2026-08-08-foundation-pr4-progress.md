@@ -1,6 +1,6 @@
 # Foundation PR4 progress（2026-08-08 → 2026-08-09）
 
-> **状态：闸 A DeployShadow 已执行（GO 00:49Z）· 闸 B ActivatePilot 已执行（GO 01:15Z）· P1 3/3 · P2 6/7（4 台各 ≥1 只读）· P3 dry_run 2 绿 1 干净失败 · P4 canary 2/2 绿 · PR7 review 7/7 闭合**  
+> **状态：闸 A DeployShadow 已执行（GO 00:49Z）· 闸 B ActivatePilot 已执行（GO 01:15Z）· P1 3/3 · P2 6/7（4 台各 ≥1 只读）· P3 dry_run 矩阵补全 4 绿 1 干净失败（image/full 已补）· P4 canary 2/2 绿 · PR7 review 7/7 闭合**  
 > 计划：`2026-08-08-foundation-pr4-plan.md`  
 > 基线：`2026-08-08-foundation-pr4-baseline.md`  
 > Runbook：`2026-08-08-foundation-pr4-runbook.md`（§1–§9 已执行；§11 待人批）
@@ -98,6 +98,24 @@
 
 **副作用说明**：input_dry_run 把测试文本留在了 01 闲鱼发布编辑器的**未发送草稿**里（试写即此意，非真实发布、非支付）。~~可在闲鱼 app 手动清草稿~~ **已于 P4 用 `xianyu.probe.flutter_pointer_tap {saveDraft:false}` 自动清除**（restoration 回 launcher，见 P4 块）。
 
+### P3b dry_run 矩阵补全（2026-08-09，人批「推图 + 补 dry_run 矩阵」）
+
+把 P3 缺的 `image_dry_run`（当时 clean fail = staging 相册不在手机）与 `full_dry_run` 补绿，dry_run 矩阵 4 能力全跑通。staging 图片经网关 `adb_shell`（xiaowei WS 22222）推上 01：
+
+| 步骤 | 动作 | 结果 |
+|---|---|---|
+| 推图 | `screencap -p` 截两图 → `MEDIA_SCANNER_SCAN_FILE` 广播（result=0）→ MediaStore 确认索引 → `sha256sum` | `Pictures/XianyuStg2/{a,b}.png`，各 2,184,676B，sha 均 `cfa031f7…b15`；MediaStore `_id=1000008568/9` |
+| `image_dry_run` | `job_eab8bc0b-4661-402a-a5ff-bd790f9ee355` | ✅ **succeeded**，`step=images-uploaded`，选相册 2 图 → 下一步(2) → 完成，verify 确认媒体数增加，**无 publish tap**，restoration 回 launcher |
+| `full_dry_run` r1 | `job_ffcc0c64-e912-4ec0-afad-064d11500e4b`（带 price） | ❌ `price:price-unverified` —— 根因：`fillPriceField`（xianyu-operator.mjs:2766）`settle(220)` < 预条件 ≥450ms 按键间隔 → 数字被吞、读回 `199` 不匹配。**干净 fail-closed**，restoration launcher、无草稿、~3m11s。记录为 pitfall 不重试同参 |
+| `full_dry_run` r2 | `job_b849c7df-9f06-44fb-a394-5f9943cf0068`（透明去掉 price 参数，避免已知按键竞态） | ✅ **succeeded**（2m46s，`output.ok=true`），走 publishDryRun 全步序（open→images→description→…→final capture），`saveDraft` 仅当 true 才写 → **未写草稿**，restoration launcher |
+
+**矩阵补全后探针（全绿）**：
+- `approval_audit` 仍 **2**（试点前遗留，dry_run 全程无新增审批）
+- `control.db` 成功 `external_effect=1` job 现 **4** 个：`d09e94da`(input) / `29affad6`(open) / `eab8bc0b`(image) / `b849c7df`(full) —— 全 dry_run 家族，capability 级外效 flag，无 submit/publish/financial → **红线判别从 2 扩到 4，语义不变**
+- `financial_commit` job/event = 0；`leases=[]` 空；四台 online 无 quarantine
+- **pilot 窗口（2026-08-08T18:00Z+）全量 job = 18，100% actor=`claude-pilot-20260809`**；禁列能力（douyin share_link / xhs.comment.send / xhs.follow.ensure）与 `financial_commit` 类 **0 执行**；非终态 **0**
+- `control.db` 非终态 46 条（recovery_required 31 / ambiguous 14 / cancelled 1）**全为 pilot 窗口前遗留**（2026-07-24~08-06，codex/hermes/grok/cursor/human:user-authorized 等历史 actor），**pilot 窗口零新增**。含历史 `douyin.observe.share_link` recovery×3、`xhs.comment.send` ambiguous×6+cancelled×1（2026-07-24/08-05/08-06，均 pre-pilot、非 pilot actor、从未 succeeded）——红线声明范围是 pilot 窗口，不受影响
+
 ### P4 结果（2026-08-09，explore/repair canary session，01 起步）
 
 `session acquire --canary`（Tier 2，E1/R1 能力，`authorization-decision.mjs:119` 要求 canary session）：
@@ -166,8 +184,8 @@
 
 ## 未做（红线）
 
-- [ ] **P1-P4 已全部执行完毕**（P4 = explore/repair canary，2026-08-09 02:05–02:08Z，2/2 绿）
-- [ ] image/full_dry_run 补全（可选：往 01 推 staging 相册 `XianyuStg2` 后重跑，补 dry_run 矩阵）
+- [x] **P1-P4 已全部执行完毕**（P4 = explore/repair canary，2026-08-09 02:05–02:08Z，2/2 绿）
+- [x] **image/full_dry_run 补全**（2026-08-09：推 staging 相册 `XianyuStg2` → image_dry_run ✅ + full_dry_run ✅（r2，r1 price 键位竞态干净失败），详见 P3b 块）→ **dry_run 矩阵 4 能力全绿**
 - [ ] codex-luna 第二个 pilot actor（就绪后加入名单）
 - [ ] runbook §11 旧分支/陈旧 ref 清理（贴人确认再删）
 - [ ] routing 仓对称指针（可选）
@@ -175,7 +193,7 @@
 ## 下一步
 
 1. **处置已定**（2026-08-09 人裁决）：**保持 pilot active 观察**（`nonpayment_v1` 维持，不回滚）。`files.json` `disposition=keep-pilot-active-observe` 已记录
-2. 观察期后续（非阻塞）：补 staging 图（`XianyuStg2`）跑 image/full dry_run 补矩阵；codex-luna 就绪后加入 pilotActors + reload
+2. 观察期后续（非阻塞）：~~补 staging 图跑 image/full dry_run 补矩阵~~ **已完成（P3b，2026-08-09）**；codex-luna 就绪后加入 pilotActors + reload；full_dry_run price 参数需先修 `fillPriceField` 按键间隔（见 P3b pitfall）再带参重跑
 3. runbook §11：列 `git branch -vv` 审一遍 → **贴人确认**后 `remote prune` + 删已合/废弃分支
 4. ~~PR7 review 继续~~ → **已完成**：7/7 闭合（PR4-4），commit 提交到分支（见 git 状态）
 
