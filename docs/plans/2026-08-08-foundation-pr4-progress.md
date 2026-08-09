@@ -1,6 +1,6 @@
 # Foundation PR4 progress（2026-08-08 → 2026-08-09）
 
-> **状态：DeployShadow（闸 A）已执行 · GO 2026-08-09T00:49Z · Pilot 未激活（闸 B 未开）**  
+> **状态：闸 A DeployShadow 已执行（GO 00:49Z）· 闸 B ActivatePilot 已执行（GO 01:15Z）· P1 三只读任务全绿 · P2 等 checkpoint · PR7 review 7/7 闭合**  
 > 计划：`2026-08-08-foundation-pr4-plan.md`  
 > 基线：`2026-08-08-foundation-pr4-baseline.md`  
 > Runbook：`2026-08-08-foundation-pr4-runbook.md`（§1–§9 已执行；§11 待人批）
@@ -52,19 +52,74 @@
 2. **`migrateLegacyPending` 测试 Windows 预存在失败**：`tests/control-plane-core.test.mjs:644`，`nonpayment_v1: migrateLegacyPending frees a legacy waiting job…`，JOB_WAIT_TIMEOUT 5s，套件内与隔离重跑均失败；`git diff 42b8964 fb7747f` 该测试/迁移/integrity 代码**逐字节相同** → 预存在环境债，非本次回归。**未**计入 receipt。待 routing 仓修（新 PR + 人审）。
 3. **agent-entry release 段 schema**：无 `pilotConfigured`/commit 字段（runbook 探针 #6 字面偏差）；`policyMode/effectiveDecisionSource/evidenceMode/releaseId` 均在。Pilot 状态与 commit 经控制面 health + cross-repo-release.json 验证。
 
+## PR4-3 — ActivatePilot（闸 B，2026-08-09）
+
+人显式开闸「现在开闸，P1 起步」→ 执行 runbook `2026-08-09-foundation-pr4-gate-b-activate-pilot-runbook.md` §1–§5。
+
+- [x] 备份 shadow 态 → `backups/registry-activate-pilot-pr4-20260809-011332/`（含 rollback-anchors.json）
+- [x] task-launch 翻转：`autonomyPolicyMode=nonpayment_v1` · `pilotActors=[claude-pilot-20260809]` · `pilotAliases=[01,02,03,04]` · `releaseId=rel-pilot-2026-08-09-foundation-pr4`
+- [x] cross-repo 同步：`policyMode=nonpayment_v1` · `pilotConfigured=true` · 17 键保留
+- [x] 控制面 reload → health `{mode:nonpayment_v1, active:true, pilotOnly:true, pilotConfigured:true}`
+- [x] GO 探针 1–8 全绿（#9 支付无靶子，见发现 1）
+- [x] **P1**：01 上 `xiaowei.device.list` + `xianyu.observe.snapshot` + `wechat.observe.probe` → **3/3 succeeded**，全只读、evidence 落库（含截图 486KB）、restoration 正常、四台无 quarantine、activeLeases=0
+
+### 闸 B 发现
+
+1. **支付无靶子**：29 能力 effect classes 仅 `none/publish/reversible/social`，无 `financial_commit` 类能力 → 探针 #9 无直接靶子；硬闸由策略代码（`financial_commit→wait_financial_commit` + protected-commit）保证。
+2. **explore 是 `canary_only/lab_only/E1`**：普通 job submit 会被 `CANARY_SESSION_REQUIRED` 拦，须 `session acquire --canary`（P4 用）。
+3. **registry observer 端点**：截图在 `/api/observer/v1/screen/:alias`（需 observer token），非 `/api/fleet/screen`；P1 截图经 control.db evidence 确认。
+4. **隔离硬拦已证**：非 pilot actor → `AUTONOMY_PILOT_SCOPE_MISS` block；pilot actor+alias → `NONPAYMENT_AUTONOMY_ACTIVE` allow。
+
+### 红线状态
+
+0 支付 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 被硬拦。**P1 后停下等 checkpoint，P2 未开**。
+
+## PR4-4 — PR #7 review closure（REQUEST CHANGES，2026-08-09）
+
+独立审查结论：需要修的是**审计表达与证据不可变性**，不是重新执行 DeployShadow。7 项发现全部闭合，证据写进 `foundation-pr4.files.json` `evidenceClosure`（7/7 verdict=fixed）：
+
+| 项 | 闭合 |
+|---|---|
+| H-01 | auditVersion 2：authorizedBefore（不可变授权快照，source=e0db476+闸 A 备份）与 observedAfter（gateA/gateB 执行块）分离 |
+| H-02 | 探针 #6 字面偏差 → `probe6=PASS_WITH_WAIVER` + reason（agent-entry schema 无 pilot 字段；语义经 health+cross-repo 证明） |
+| H-03 | scoped receipt 非事后挑选（见下证据链） |
+| M-01 | `migrateLegacyPending` 在 `pilotOnly===true` 返回 null（control-plane.mjs:363）；live DB 0 waiting（12 行全终态） |
+| M-02 | 全量 SHA-256；authorized 两值经闸 A 备份 `sha256sum` **字节级交叉验证** |
+| M-03 | PR body 措辞钉死：本 PR 仅 docs；记录的是已发生（人授权下受控运维）的部署/写配置/进程重启，不改运行时代码 |
+| M-04 | 可执行两级回滚（见下） |
+
+### H-03 证据链（receipt 范围先于执行被固定）
+
+1. **机械闸门先于执行**：`assert-release-gates.mjs` @ fb7747f（routing main，本 PR 未改）硬编码 8 个 `RUNTIME_CRITICAL_TEST_MARKERS`，要求 `passed≥15`、`failed=0`、`gitCommit==HEAD`、command 引用 ≥2 个 marker、receipt ≤48h。旧 receipt（fb4f90be，4 passed）挡启动——闸门是机械的，非人判。
+2. **范围受闸门约束**：6 个被选套件全部落在预定义 8-marker 集合内；`failed=0` 强制已知失败套件（control-plane-core 的 migrateLegacyPending）退出任何通过性 receipt。该失败经 `git diff 42b8964 fb7747f` 逐字节相同证明为预存在。
+3. **时间线（committer 日期）**：runbook draft `84a8a3e` 16:35:37Z → **人审 `a8ea70f` 00:33:17Z → receipt 写入 00:47:16.594Z（磁盘 mtime==completedAt，runtime/ gitignored）→ 执行记录 `de4aec0` 00:51:49Z**。人审先于测试执行。
+4. **范围决策落留痕**：`outbox/claude-bridge/20260809-deploy-shadow-execution.md` §2 记录了人批「跑测试补 receipt」与「6 全绿 critical 套件（41/0）生成 scoped receipt，失败记留痕不伪造」。
+5. **receipt 防篡改**：`write-release-test-receipt.mjs` @ fb7747f 把 gitCommit+command+passed+failed+completedAt 绑进 `bodyHash=a10f72a1…`；磁盘文件 sha=`abe90b90…`。
+   - **残余未决（标注非解决）**：8 个 marker 之一 `assert-release-gates.test.mjs` 未被引用，执行时未记录排除原因。
+
+### M-04 可执行两级回滚（字节级可验证）
+
+| 层级 | 还原目标 | 备份源（sha） | 确认 |
+|---|---|---|---|
+| 闸 B undo（pilot→shadow-deployed） | task-launch @fb7747f · releaseId=rel-shadow-2026-08-08-foundation-pr4 · shadow | `backups/registry-activate-pilot-pr4-20260809-011332/control/`（task-launch `9cea710b` / cross-repo `67c2f61c`） | reload 控制面 → shadow active=false pilotConfigured=false |
+| 闸 A undo（DeployShadow→pre-deploy） | task-launch @524c21e · releaseId=rel-shadow-2026-08-02-repair-consumer-v1 | `backups/registry-deploy-shadow-pr4-20260809-003955/control/` + registry.mjs + registry.db（task-launch `50f92183` / cross-repo `7200514a` **== authorizedBefore 精确一致**） | redeploy registry.mjs → 17930 health + gitCommit=524c21e |
+
+**0-nonterminal barrier**：任何回滚前 control-plane `activeLeases` 必须为 0、approvals 队列空（pilot 空闲态两条件均满足）。不携带 in-flight 任务回滚。
+
 ## 未做（红线）
 
-- [ ] **ActivatePilot（闸 B）**——另批，未开
-- [ ] 真机 canary
+- [ ] **P2（扩 4 台 observe）**——等 checkpoint
+- [ ] P3（dry_run 试写） / P4（explore/repair canary session）
+- [ ] codex-luna 第二个 pilot actor（就绪后加入名单）
 - [ ] runbook §11 旧分支/陈旧 ref 清理（贴人确认再删）
 - [ ] routing 仓对称指针（可选）
 
 ## 下一步
 
-1. **PR4-2 提交**：按 `HANDOFF-2026-08-08-foundation-pr4-gate.md` 提交 PR（docs + 留痕）→ 人审
-2. runbook §11：列 `git branch -vv` 审一遍 → **贴人确认**后 `remote prune` + 删已合/废弃分支；归档旧 release 产物
-3. 重采 baseline → `files.json` `live*` 更新为部署后值（闸 A 已做，见 §9）
-4. 闸 B（ActivatePilot）由人另行决策，需新 runbook/闸门
+1. **P2 checkpoint**：人确认后扩 4 台只读 observe（闸 B 已执行但审查当时 NO-GO——时间冲突待用户裁决，P2 暂停等拍板）
+2. ~~PR7 review 继续~~ → **已完成**：7/7 闭合（PR4-4），commit 提交到分支（见 git 状态）
+3. runbook §11：列 `git branch -vv` 审一遍 → **贴人确认**后 `remote prune` + 删已合/废弃分支
+4. codex-luna 就绪 → 加入 pilotActors + reload
 
 ## 取消
 
