@@ -193,7 +193,7 @@
 ## 下一步
 
 1. **处置已定**（2026-08-09 人裁决）：**保持 pilot active 观察**（`nonpayment_v1` 维持，不回滚）。`files.json` `disposition=keep-pilot-active-observe` 已记录
-2. 观察期后续（非阻塞）：~~补 staging 图跑 image/full dry_run 补矩阵~~ **已完成（P3b，2026-08-09）**；codex-luna 就绪后加入 pilotActors + reload；full_dry_run price 参数需先修 `fillPriceField` 按键间隔（见 P3b pitfall）再带参重跑
+2. 观察期后续（非阻塞）：~~补 staging 图跑 image/full dry_run 补矩阵~~ **已完成（P3b，2026-08-09）**；codex-luna 就绪后加入 pilotActors + reload；full_dry_run price 参数修复 = **routing PR #44**（`fix/xianyu-price-numpad-settle-interval`，`settle(220)`→`APP_NUMPAD_SETTLE_MS`），合入部署后再带参回归
 3. runbook §11：列 `git branch -vv` 审一遍 → **贴人确认**后 `remote prune` + 删已合/废弃分支
 4. ~~PR7 review 继续~~ → **已完成**：7/7 闭合（PR4-4），commit 提交到分支（见 git 状态）
 
