@@ -1,20 +1,22 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-09 Foundation PR4 **DeployShadow 已执行** · GO 2026-08-09T00:49Z · `rel-shadow-2026-08-08-foundation-pr4` · Pilot inactive（闸 B 未开）
+> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · GO 2026-08-09T01:15Z · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · P1 三只读任务全绿 · P2 待 checkpoint
 
-## 2026-08-08/09 Foundation PR4 — DeployShadow（闸 A 已过）
+## 2026-08-08/09 Foundation PR4 — ActivatePilot（闸 B，P1 已过）
 
-**状态**：**闸 A 已执行**（2026-08-09 GO）。双仓 fetch/对齐 → 备份 → routing checkout `main @ fb7747f` → task-launch 重写 → 控制面 17920 **恢复拉起**（D0 主流程）→ registry LF blob 部署 + reload → cross-repo-release.json 重写 → **GO 探针 1–10 全绿**。**Pilot 未激活**（`policyMode=shadow`、`pilotActors/pilotAliases=[]`、`pilotConfigured=false`）。
+**状态**：**闸 B 已执行**（2026-08-09，人显式开闸「现在开闸，P1 起步」）。备份 shadow 态 → task-launch `autonomyPolicyMode=shadow→nonpayment_v1`、`pilotActors=[claude-pilot-20260809]`、`pilotAliases=[01,02,03,04]`、`releaseId→rel-pilot-2026-08-09-foundation-pr4` → cross-repo 同步 → 控制面 reload → **GO 探针 1–8 全绿**。**Pilot 激活**：`policyMode={mode:nonpayment_v1, active:true, pilotOnly:true, pilotConfigured:true}`。
 
-**部署后值**：routing `fb7747feefd975ad14fdd51c3313b3487ae978ee` @ `main` · registry `b1e5e70d3a53c8c1d119b078833e9066f8ccf107` · task-launch `gitCommit=fb7747f…` · `releaseId=rel-shadow-2026-08-08-foundation-pr4` · registry.mjs 磁盘 = tip blob LF `151aa93b…` · cross-repo `registryCommit==windowsRegistryCommit=b1e5e70`（收口）。
+**P1（01 只读 observe）三任务全绿**：`xiaowei.device.list` + `xianyu.observe.snapshot` + `wechat.observe.probe` → 全部 `succeeded`，`approvalRequired=false`、`externalEffect=false`，evidence 落库（3 result + 1 screenshot 486KB），restoration 正常回桌面，四台全 online 无 quarantine，activeLeases=0。
+
+**隔离验证**：非 pilot actor（`codex-share-b`）提交 → authorization `block / AUTONOMY_PILOT_SCOPE_MISS / out_of_scope / shadow`；pilot actor+alias → `allow / NONPAYMENT_AUTONOMY_ACTIVE / in_scope / deployed-runtime`。
 
 **执行发现（需 follow-up）**：
-1. **release gates test receipt 硬约束**：`runtime/release-test-receipt.json` 必须 `gitCommit==HEAD` + `passed≥15` + ≥2 critical 标记。旧 receipt 是旧 commit 的 → 拦控制面启动。本闸用 6 个全绿 critical 套件（41 过/0 败）生成 scoped receipt 放行。
-2. **`migrateLegacyPending` 测试 Windows 预存在失败**（control-plane-core.test.mjs:644，JOB_WAIT_TIMEOUT 5s；代码与旧 checkout 42b8964 逐字节相同 → 非本次回归）。**未**进 receipt，记环境债，待 routing 仓处理。
-3. **agent-entry release 段 schema 无 `pilotConfigured`/commit 字段**（runbook 探针 #6 字面偏差）；实际语义由控制面 health + cross-repo-release.json 满足。
+1. **支付无靶子**：当前 29 能力 effect classes 仅 `none/publish/reversible/social`，**无 `financial_commit` 类能力**，探针 #9（支付被拦）无直接靶子；硬闸由 `nonpayment-autonomy-policy.mjs:27-29`（`financial_commit→wait_financial_commit`）+ `protected-commit-policy` 代码保证。
+2. **explore 是 `canary_only/lab_only/E1`**：`xiaowei.explorer.primitive` 不能普通 job submit，须 `session acquire --canary`（P4 用）。
+3. **registry observer 截图端点**：`/api/observer/v1/screen/:alias`（需 observer token），非 `/api/fleet/screen`；P1 截图经 control.db evidence 直接确认。
 
-**下一步**：闸 B（ActivatePilot）**另批**；runbook §11 清旧分支/陈旧 ref（贴人确认）；PR 提交（PR4-2）后人审。  
-**红线**：0 ActivatePilot · 0 真机 canary · 0 支付路径。
+**下一步**：P2（扩 4 台 observe）**待人 checkpoint** → P3（dry_run 试写）→ P4（explore/repair canary session）；runbook §11 清旧分支；~~PR7 review~~ **7/7 闭合**（`files.json` `evidenceClosure`：H-01/02/03 + M-01/02/03/04）。  
+**红线**：0 支付路径 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 已被硬拦。
 
 ## 2026-08-08 Foundation PR2 wiring + submit lock（已合 main）
 

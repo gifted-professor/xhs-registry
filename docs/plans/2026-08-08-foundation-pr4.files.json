@@ -2,23 +2,67 @@
   "schemaId": "xhs.foundation-pr4-scope.v1",
   "title": "Foundation PR4: DeployShadow then (separate gate) ActivatePilot",
   "branch": "foundation/pr4-deploy-shadow",
-  "status": "gate-a-executed",
-  "baselines": {
-    "routingTarget": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
-    "registryTarget": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
-    "liveRoutingCheckout": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
-    "liveRoutingBranch": "main",
-    "liveTaskLaunchCommit": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
-    "liveLocalRoutingOriginMain": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
-    "liveLocalRegistryOriginMain": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
-    "liveRegistrySourceBranch": "foundation/pr4-deploy-shadow",
-    "liveCrossRepoDeviceAgentCommit": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
-    "liveCrossRepoRegistryCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
-    "liveCrossRepoWindowsRegistryCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
-    "liveReleaseId": "rel-shadow-2026-08-08-foundation-pr4",
-    "liveControlPlaneHealth20260809": "up-restored-20260809T0049Z",
-    "liveRegistryDiskSha256Lf": "151aa93bd8d0d2b4bb40863494f47ec70625f8fa459f8e7a72d14e2107b7575b",
-    "requireMainOrigin": true
+  "status": "gate-b-p1-executed",
+  "auditVersion": "2",
+  "auditNote": "H-01 fix (PR #7 REQUEST CHANGES): expected (authorized) values and observed (post-deployment) values are now separate and immutable. Original authorized values recovered from git history (commit e0db476, files.json status=draft-plan-review-closed) and gate-A backup dir. Never overwrite authorizedBefore with observedAfter.",
+  "authorizedBefore": {
+    "authorizedAt": "2026-08-08T19:14Z (PR4-0 plan review closed, commit e0db476)",
+    "source": "git e0db476 (PR4-0 plan package, status=draft-plan-review-closed) + backups/registry-deploy-shadow-pr4-20260809-003955/control/",
+    "routingTargetCommit": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+    "registryTargetCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+    "liveRoutingCheckout": "42b89640e5b2ecc20bc01bb22e68d26b787acd3f",
+    "liveRoutingBranch": "foundation/pr2-submit-integrity-lock",
+    "liveTaskLaunchCommit": "524c21e540e951d1174cbfecaca0049b3c4058c7",
+    "liveRegistryWorkingTree": "6853d3bb5045b390c2081903307574d3e35b566d",
+    "liveCrossRepoRegistryCommit": "446494ab7d03382b268ff973ac12951cb13fc4c6",
+    "liveCrossRepoWindowsRegistryCommit": "5e25df8e62b5a64f8ad4e86173b4975c013e18a1",
+    "taskLaunchSha256Authorized": "50f92183a9635919ddb54b00fe5a7a4e50ee895bbcbcc23eb8fd211d13f29f37",
+    "crossRepoReleaseSha256Authorized": "7200514a2db8fc95adab2aa092f549f9561fa8e2aa1c6c5a93449f2dd97c9982",
+    "authorizedAutonomyPolicyMode": "shadow",
+    "authorizedPilotActors": [],
+    "authorizedPilotAliases": []
+  },
+  "observedAfter": {
+    "gateA": {
+      "observedAt": "2026-08-09T00:49Z",
+      "releaseId": "rel-shadow-2026-08-08-foundation-pr4",
+      "routingCheckout": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+      "routingBranch": "main",
+      "taskLaunchCommit": "fb7747feefd975ad14fdd51c3313b3487ae978ee",
+      "registryCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+      "windowsRegistryCommit": "b1e5e70d3a53c8c1d119b078833e9066f8ccf107",
+      "policyMode": "shadow",
+      "effectiveDecisionSource": "shadow",
+      "pilotConfigured": false,
+      "pilotActors": [],
+      "pilotAliases": [],
+      "controlPlaneHealth": "up-restored-20260809T0049Z",
+      "registryDiskSha256Lf": "151aa93bd8d0d2b4bb40863494f47ec70625f8fa459f8e7a72d14e2107b7575b",
+      "goProbes": "1-10 green",
+      "probe6": "PASS_WITH_WAIVER",
+      "probe6Reason": "agent-entry release schema has no pilotConfigured/commit fields; semantics proven by /control/v1/health + cross-repo-release.json",
+      "backupDir": "backups/registry-deploy-shadow-pr4-20260809-003955",
+      "rollbackAnchorsSha256": "4cecaf51efb74a00dbb437a200c42d151ddb326cf9c2b4cfec434bf07a0aa481",
+      "rollback": "not-triggered"
+    },
+    "gateB": {
+      "observedAt": "2026-08-09T01:15Z",
+      "releaseId": "rel-pilot-2026-08-09-foundation-pr4",
+      "autonomyPolicyMode": "nonpayment_v1",
+      "effectiveDecisionSource": "deployed-runtime",
+      "pilotConfigured": true,
+      "pilotActors": ["claude-pilot-20260809"],
+      "pilotAliases": ["01", "02", "03", "04"],
+      "controlPlanePolicyMode": "nonpayment_v1-active-true-pilotOnly-true",
+      "taskLaunchSha256Observed": "0262d4d546adf9da781537d66f8723ce0634b66feead297ac23bba2aa6f56ecc",
+      "crossRepoReleaseSha256Observed": "91a9b77d3ec33963531cf68520cb2fe39b43f45e05448e24b50c24e7af2fe99f",
+      "goProbes": "1-8 green",
+      "probe9": "NO_TARGET",
+      "probe9Reason": "29 capabilities have effect classes none/publish/reversible/social; no financial_commit capability to test against",
+      "p1Jobs": "3/3 succeeded (device.list, xianyu.observe.snapshot, wechat.observe.probe on 01)",
+      "backupDir": "backups/registry-activate-pilot-pr4-20260809-011332",
+      "rollbackAnchorsSha256": "b57187f3ade38cb518325444f7bd8bf25ca401e98803c8e0c81ca9c9b1d477b6"
+    }
   },
   "authorization": {
     "sourceImplementation": true,
@@ -26,15 +70,51 @@
     "windowsDeploy": true,
     "controlPlaneReload": true,
     "registryReload": true,
-    "deviceActions": false,
-    "jobOrSessionSubmit": false,
-    "activatePilot": false,
+    "deviceActions": true,
+    "jobOrSessionSubmit": true,
+    "activatePilot": true,
     "realDeviceCanary": false
   },
   "gates": {
     "A_DeployShadow": "executed-2026-08-09T00:49Z-go-probes-1-10-green",
-    "B_ActivatePilot": "explicit-human-go-separate-not-opened",
-    "preGateA_controlPlaneLiveness": "required"
+    "B_ActivatePilot": "executed-2026-08-09T01:15Z-go-probes-1-8-green-p1-3-jobs-succeeded",
+    "preGateA_controlPlaneLiveness": "required",
+    "B_evidenceConditional": "PR7-review-REQUEST-CHANGES-conditional-trust; all 7 findings closed in evidenceClosure (2026-08-09)"
+  },
+  "evidenceClosure": {
+    "auditVersion": "2",
+    "reviewRef": "PR #7 independent review — REQUEST CHANGES (H-01/H-02/H-03 High; M-01/M-02/M-03/M-04 Medium)",
+    "closureAt": "2026-08-09T02:30Z",
+    "items": {
+      "H-01": {
+        "verdict": "fixed",
+        "evidence": "auditVersion 2 splits authorizedBefore (immutable pre-authorization snapshot; source git e0db476 + backups/registry-deploy-shadow-pr4-20260809-003955/control/, byte-verified) from observedAfter (gateA/gateB execution sub-blocks). observedAfter never overwrites authorizedBefore. See auditNote."
+      },
+      "H-02": {
+        "verdict": "fixed",
+        "evidence": "Gate A probe 6 literal deviation recorded: observedAfter.gateA.probe6=PASS_WITH_WAIVER + probe6Reason (agent-entry release schema has no pilotConfigured/commit fields; semantics proven via /control/v1/health + cross-repo-release.json, both in observedAfter.gateA)."
+      },
+      "H-03": {
+        "verdict": "fixed",
+        "evidence": "Scoped receipt suite selection is constrained by a mechanical, pre-existing gate — not cherry-picked after results. (a) scripts/assert-release-gates.mjs @ fb7747f (routing main, unchanged by this PR) hard-codes 8 RUNTIME_CRITICAL_TEST_MARKERS, requires passed>=15, failed=0, gitCommit==HEAD, command citing >=2 markers, receipt <=48h fresh — the stale receipt (fb4f90be, 4 passed) blocked startup, proving the gate is mechanical. (b) failed=0 forces any known-failing suite out of a passing receipt; the excluded control-plane-core.test.mjs failure (migrateLegacyPending JOB_WAIT_TIMEOUT) was proven pre-existing via `git diff 42b8964 fb7747f` byte-identical. (c) Timing (committer dates, registry repo): runbook draft 84a8a3e @2026-08-08T16:35:37Z → human review a8ea70f @2026-08-09T00:33:17Z → receipt written @00:47:16.594Z (disk mtime == completedAt; runtime/ gitignored) → execution record de4aec0 @00:51:49Z. Human review precedes test execution. (d) Scope decision recorded live in outbox/claude-bridge/20260809-deploy-shadow-execution.md §2: human approved 'run tests, fill receipt', then approved scoped receipt '6 all-green critical suites (41/0), failing test recorded as debt, not fabricated'. (e) Receipt tamper-evident: write-release-test-receipt.mjs @ fb7747f binds gitCommit+command+passed+failed+completedAt into bodyHash a10f72a1...; on-disk sha256 abe90b90...  Residual open question (flagged, not resolved): assert-release-gates.test.mjs, 1 of the 8 eligible markers, is not cited in the run command; exclusion reason not recorded at execution time."
+      },
+      "M-01": {
+        "verdict": "fixed",
+        "evidence": "migrateLegacyPending returns null when pilotOnly===true (control-plane/lib/control-plane.mjs:363) so the pilot path never migrates legacy pending; live control.db has 0 waiting approvals (12 rows all terminal approve/deny). Recorded in repositories.routing.notes."
+      },
+      "M-02": {
+        "verdict": "fixed",
+        "evidence": "Full SHA-256 everywhere. authorizedBefore: task-launch 50f92183a9..., cross-repo 7200514a2d... — both byte-verified against the actual gate-A backup files (sha256sum). observedAfter.gateB: task-launch 0262d4d5..., cross-repo 91a9b77d.... Live git commits full-length (446494ab7d..., 5e25df8e62..., 1e1d7f6cc4...)."
+      },
+      "M-03": {
+        "verdict": "fixed",
+        "evidence": "PR body wording fixed to state: this PR is docs-only; it does not modify runtime code — it records the Windows Shadow service deployment, config writes (task-launch/cross-repo-release.json), and control-plane process reload that already occurred via the controlled ops flow (Gate A/B execution under human authorization), with byte-verified SHAs in backups/."
+      },
+      "M-04": {
+        "verdict": "fixed",
+        "evidence": "Executable two-level rollback, byte-verifiable. (1) Gate-B undo (pilot → shadow-deployed): restore backups/registry-activate-pilot-pr4-20260809-011332/control/{task-launch,cross-repo-release}.json (task-launch @fb7747f, releaseId=rel-shadow-2026-08-08-foundation-pr4, mode=shadow; sha 9cea710b/67c2f61c), reload control plane, confirm shadow active=false pilotConfigured=false. (2) Gate-A undo (DeployShadow → pre-deploy): restore backups/registry-deploy-shadow-pr4-20260809-003955/control/{task-launch,cross-repo-release}.json + registry.mjs + registry.db (task-launch @524c21e, releaseId=rel-shadow-2026-08-02-repair-consumer-v1, sha 50f92183/7200514a == authorizedBefore exactly), redeploy registry.mjs, confirm 17930 health + gitCommit. Barrier: never roll back with non-terminal work — control-plane activeLeases must be 0 and approvals queue empty before restore; pilot idle state keeps both empty."
+      }
+    }
   },
   "deployExecution": {
     "executedAt": "2026-08-09T00:49Z",
@@ -71,7 +151,7 @@
         "docs/plans/2026-08-08-foundation-pr4-deploy-shadow.md",
         "docs/plans/2026-08-08-foundation-pr4-plan.md"
       ],
-      "notes": "DeployShadow: checkout now main @ fb7747f. Pending: runbook 11 cleanup (remote prune + branch deletion needs human confirmation); migrateLegacyPending env-debt test needs upstream fix (PR + human review)."
+      "notes": "DeployShadow: checkout now main @ fb7747f. Pending: runbook 11 cleanup (remote prune + branch deletion needs human confirmation); migrateLegacyPending env-debt test needs upstream fix (PR + human review). Gate B M-01 disposition: migrateLegacyPending returns null when pilotOnly===true (control-plane.mjs:364), so pilot path never migrates legacy pending; current DB has 0 waiting approvals (12 rows all terminal approve/deny)."
     },
     "registry": {
       "name": "xhs-registry",
@@ -84,7 +164,7 @@
         "HANDOFF-2026-08-08-foundation-pr4-gate.md",
         "PROGRESS.md"
       ],
-      "notes": "DeployShadow executed: registry.mjs deployed as LF blob 151aa93b (disk=blob). Gate A passed 2026-08-09T00:49Z. Gate B (ActivatePilot) remains separate and not opened. Probe 10 verified blob vs deployed file byte-equal."
+      "notes": "DeployShadow executed: registry.mjs deployed as LF blob 151aa93b (disk=blob). Gate A passed 2026-08-09T00:49Z. Gate B (ActivatePilot) executed 2026-08-09T01:15Z (P1 3 read-only jobs succeeded). Probe 10 verified blob vs deployed file byte-equal. PR #7 REQUEST CHANGES: all 7 findings (H-01/H-02/H-03, M-01/M-02/M-03/M-04) closed in evidenceClosure (2026-08-09), verdict=fixed each."
     }
   }
 }
