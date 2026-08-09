@@ -1,6 +1,6 @@
 # Foundation PR4 progress（2026-08-08 → 2026-08-09）
 
-> **状态：闸 A DeployShadow 已执行（GO 00:49Z）· 闸 B ActivatePilot 已执行（GO 01:15Z）· P1 三只读任务全绿 · P2 等 checkpoint · PR7 review 7/7 闭合**  
+> **状态：闸 A DeployShadow 已执行（GO 00:49Z）· 闸 B ActivatePilot 已执行（GO 01:15Z）· P1 3/3 · P2 6/7（4 台各 ≥1 只读）· P3 dry_run 2 绿 1 干净失败 · P4 canary 2/2 绿 · PR7 review 7/7 闭合**  
 > 计划：`2026-08-08-foundation-pr4-plan.md`  
 > 基线：`2026-08-08-foundation-pr4-baseline.md`  
 > Runbook：`2026-08-08-foundation-pr4-runbook.md`（§1–§9 已执行；§11 待人批）
@@ -64,6 +64,7 @@
 - [x] **P1**：01 上 `xiaowei.device.list` + `xianyu.observe.snapshot` + `wechat.observe.probe` → **3/3 succeeded**，全只读、evidence 落库（含截图 486KB）、restoration 正常、四台无 quarantine、activeLeases=0
 - [x] **P2**（人 checkpoint「现在开 P2」后）：按各设备能力白名单扩 4 台只读 observe → **6/7 succeeded**，4 台各 ≥1 成功，无新增 quarantine（详见 P2 块）
 - [x] **P3**（人 checkpoint「开 P3 dry_run」后）：01 上 `input_dry_run`+`open_dry_run` 绿、`image_dry_run` 干净失败（staging 相册已不在手机）→ dry_run 语义+三探针验证（详见 P3 块）
+- [x] **P4**（人 checkpoint「开 P4 canary session」后）：`session acquire --canary` 跑 `xiaowei.explorer.primitive` + `xianyu.probe.flutter_pointer_tap` → **2/2 succeeded**，P3 草稿副作用随 `saveDraft:false` 清除（详见 P4 块）
 
 ### P2 结果（2026-08-09，扩 4 台只读 observe）
 
@@ -95,7 +96,24 @@
 
 **P3 三探针**：dry_run 返回 expected（不真发）✓（input/open audit 无 submit 动作）· approval_audit 0 新增（仍 2 行，试点前遗留）✓ · financial_commit 0 job 0 event ✓ · leases 空 ✓。
 
-**副作用说明**：input_dry_run 把测试文本留在了 01 闲鱼发布编辑器的**未发送草稿**里（试写即此意，非真实发布、非支付）。可在闲鱼 app 手动清草稿。
+**副作用说明**：input_dry_run 把测试文本留在了 01 闲鱼发布编辑器的**未发送草稿**里（试写即此意，非真实发布、非支付）。~~可在闲鱼 app 手动清草稿~~ **已于 P4 用 `xianyu.probe.flutter_pointer_tap {saveDraft:false}` 自动清除**（restoration 回 launcher，见 P4 块）。
+
+### P4 结果（2026-08-09，explore/repair canary session，01 起步）
+
+`session acquire --canary`（Tier 2，E1/R1 能力，`authorization-decision.mjs:119` 要求 canary session）：
+
+| 能力 | session | jobId | 结果 | 证据 |
+|---|---|---|---|---|
+| `xiaowei.explorer.primitive`（`{primitive:"screen"}`） | session_036a622a（**released:true**） | job_bf77511d | ✅ succeeded canary | screen.png **2.1MB**（01 当时停在闲鱼发布编辑器，P3 草稿可见）· restoration ok · externalEffect=false |
+| `xianyu.probe.flutter_pointer_tap`（`{saveDraft:false}`） | session_154f4442（lease 自清扫） | job_16f32260 | ✅ succeeded canary | typed-http **3 tap 成功 0 gateway fallback** · `flutter-tap-transition-verified` · **restoration 回 launcher（com.miui.home）** · externalEffect=false |
+
+两 job 均 `approvalRequired=false` / `externalEffect=false` / canary=true / 无支付。
+
+**P4 后探针全绿**：control plane 仍 `nonpayment_v1/active/pilotOnly/pilotConfigured` · `activeLeases=0` · `leases=0` · `sessions=0` · `approval_audit` 仍 2（无新增审批）· 四台 online 无 quarantine · 无 `financial_commit` job/event。
+
+**P4 发现**：
+- **P3 草稿副作用闭环**：flutter_pointer_tap `saveDraft:false` = discard-without-saving，restoration 返回 launcher，01 闲鱼编辑器里的未发送草稿已被清除。
+- **interactive canary session 生命周期**：explorer action ~2s 完成 → 手动 release 成功（`released:true`）；flutter action 跑满 ~60s lease（typed-http 过渡验证）→ session 行在 action 结束后已被控制面释放，事后手动 release 返回 `SESSION_NOT_FOUND`（404），lease 行在 `expires_at`（60s 后）由 `cleanupExpiredLeases` **自清扫**（interactive 类直接删除，**不 quarantine、不 recovery**），终态 `leases=0`。证据链完整性与手动 release 成败无关。
 
 ### 闸 B 发现
 
@@ -105,10 +123,12 @@
 4. **隔离硬拦已证**：非 pilot actor → `AUTONOMY_PILOT_SCOPE_MISS` block；pilot actor+alias → `NONPAYMENT_AUTONOMY_ACTIVE` allow。
 5. **设备能力白名单差异（P2 新增）**：不是每台都路由同一组 observe——04 无 `xianyu.observe.snapshot`/`wechat.observe.probe`（有 `image_manifest`/`feed`），03 无 `wechat.observe.*`。P2 按白名单配能力，避免盲目同质提交。
 6. **04 `xhs.observe.feed` 环境失败（P2 新增）**：`ADAPTER_HTTP_UNAVAILABLE`——loopback adapter `127.0.0.1:17896` 对 04 不可达（restoration 也报 return_home_error "gateway could not reach the leased device"）。同一设备 `device.list` 成功（走 transport:xiaowei:22222），说明是 xhs 专用 adapter/传输不可达，**非能力逻辑缺陷、非隔离拦截**。未盲目重试，记为环境债（`pitfall-…-20260809`）。
+7. **P4 新增**：Tier 2 canary session（E1/R1）用 `session acquire --canary` 可走通；explore `screen` 截图 2.1MB 证明手机真实状态（闲鱼发布编辑器 + P3 草稿）；flutter_pointer_tap `saveDraft:false` 清草稿并回 launcher。
+8. **P4 新增**：长跑 canary action 结束即自动释放 session，lease 自清扫（见 P4 块）。
 
 ### 红线状态
 
-0 支付 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 被硬拦。**P1+P2 已过（4 台各 ≥1 只读成功），P3 未开等 checkpoint**。
+0 支付 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 被硬拦。**P1+P2+P3+P4 已过（P3 只 dry_run 未真发；P4 canary 2/2 绿，P3 草稿副作用已清）**。
 
 ## PR4-4 — PR #7 review closure（REQUEST CHANGES，2026-08-09）
 
@@ -144,15 +164,15 @@
 
 ## 未做（红线）
 
-- [ ] **P2（扩 4 台 observe）**——等 checkpoint
-- [ ] P3（dry_run 试写） / P4（explore/repair canary session）
+- [ ] **P1-P4 已全部执行完毕**（P4 = explore/repair canary，2026-08-09 02:05–02:08Z，2/2 绿）
+- [ ] image/full_dry_run 补全（可选：往 01 推 staging 相册 `XianyuStg2` 后重跑，补 dry_run 矩阵）
 - [ ] codex-luna 第二个 pilot actor（就绪后加入名单）
 - [ ] runbook §11 旧分支/陈旧 ref 清理（贴人确认再删）
 - [ ] routing 仓对称指针（可选）
 
 ## 下一步
 
-1. **P2 checkpoint**：人确认后扩 4 台只读 observe（闸 B 已执行但审查当时 NO-GO——时间冲突待用户裁决，P2 暂停等拍板）
+1. **试点全链路 P1-P4 完成** → 待人裁定：收口回滚到 shadow（走 §6 两级回滚），还是保持 pilot active 观察，还是补 image/full_dry_run
 2. ~~PR7 review 继续~~ → **已完成**：7/7 闭合（PR4-4），commit 提交到分支（见 git 状态）
 3. runbook §11：列 `git branch -vv` 审一遍 → **贴人确认**后 `remote prune` + 删已合/废弃分支
 4. codex-luna 就绪 → 加入 pilotActors + reload

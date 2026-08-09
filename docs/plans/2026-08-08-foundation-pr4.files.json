@@ -2,7 +2,7 @@
   "schemaId": "xhs.foundation-pr4-scope.v1",
   "title": "Foundation PR4: DeployShadow then (separate gate) ActivatePilot",
   "branch": "foundation/pr4-deploy-shadow",
-  "status": "gate-b-p3-executed",
+  "status": "gate-b-p4-executed",
   "auditVersion": "2",
   "auditNote": "H-01 fix (PR #7 REQUEST CHANGES): expected (authorized) values and observed (post-deployment) values are now separate and immutable. Original authorized values recovered from git history (commit e0db476, files.json status=draft-plan-review-closed) and gate-A backup dir. Never overwrite authorizedBefore with observedAfter.",
   "authorizedBefore": {
@@ -62,6 +62,7 @@
       "p1Jobs": "3/3 succeeded (device.list, xianyu.observe.snapshot, wechat.observe.probe on 01)",
       "p2Jobs": "6/7 succeeded across 02/03/04 (02: device.list+snapshot+wechat.probe; 03: device.list+snapshot; 04: device.list). 1 env failure: xhs.observe.feed on 04 ADAPTER_HTTP_UNAVAILABLE (loopback 17896 unreachable; same device device.list ok → transport issue not capability/isolated-block). All approvalRequired=false externalEffect=false; 4/4 online quarantine=0; leases empty.",
       "p3Jobs": "dry_run 试写 on 01: input_dry_run + open_dry_run succeeded (no publish action; capability-level externalEffect=true but audit shows input-only, no submit); image_dry_run VERIFICATION_FAILED image-album-missing (historical staging album XianyuStg2 no longer on phone; clean fail, no side effects). Probes: approval_audit 0 new (still 2 pre-pilot), financial jobs 0, leases empty.",
+      "p4Jobs": "canary sessions on 01 (Tier 2 E1/R1, session acquire --canary): xiaowei.explorer.primitive {primitive:screen} succeeded (job_bf77511d, screen.png 2.1MB showing xianyu publish editor w/ P3 draft; session released:true) + xianyu.probe.flutter_pointer_tap {saveDraft:false} succeeded (job_16f32260, typed-http 3 taps 0 fallback, restoration returned to launcher, discarding the P3 unsent draft). Both approvalRequired=false externalEffect=false canary=true. Post probes: control plane nonpayment_v1/active/pilotOnly/pilotConfigured, activeLeases=0, leases=0, sessions=0, approval_audit still 2, 4/4 online no quarantine, no financial_commit. Finding: long-running canary action auto-releases session at completion (manual release then SESSION_NOT_FOUND); interactive lease row self-swept by cleanupExpiredLeases after expires_at (no quarantine, no recovery).",
       "backupDir": "backups/registry-activate-pilot-pr4-20260809-011332",
       "rollbackAnchorsSha256": "b57187f3ade38cb518325444f7bd8bf25ca401e98803c8e0c81ca9c9b1d477b6"
     }
@@ -79,7 +80,7 @@
   },
   "gates": {
     "A_DeployShadow": "executed-2026-08-09T00:49Z-go-probes-1-10-green",
-    "B_ActivatePilot": "executed-2026-08-09T01:15Z-go-probes-1-8-green-p1-3-succeeded-p2-6-of-7-succeeded-4-of-4-machines-covered-p3-dry-run-2-succeeded-1-clean-fail",
+    "B_ActivatePilot": "executed-2026-08-09T01:15Z-go-probes-1-8-green-p1-3-succeeded-p2-6-of-7-succeeded-4-of-4-machines-covered-p3-dry-run-2-succeeded-1-clean-fail-p4-canary-2-succeeded-p3-draft-sideeffect-cleared",
     "preGateA_controlPlaneLiveness": "required",
     "B_evidenceConditional": "PR7-review-REQUEST-CHANGES-conditional-trust; all 7 findings closed in evidenceClosure (2026-08-09)"
   },
@@ -166,7 +167,7 @@
         "HANDOFF-2026-08-08-foundation-pr4-gate.md",
         "PROGRESS.md"
       ],
-      "notes": "DeployShadow executed: registry.mjs deployed as LF blob 151aa93b (disk=blob). Gate A passed 2026-08-09T00:49Z. Gate B (ActivatePilot) executed 2026-08-09T01:15Z (P1 3 read-only jobs succeeded). Probe 10 verified blob vs deployed file byte-equal. PR #7 REQUEST CHANGES: all 7 findings (H-01/H-02/H-03, M-01/M-02/M-03/M-04) closed in evidenceClosure (2026-08-09), verdict=fixed each."
+      "notes": "DeployShadow executed: registry.mjs deployed as LF blob 151aa93b (disk=blob). Gate A passed 2026-08-09T00:49Z. Gate B (ActivatePilot) executed 2026-08-09T01:15Z: P1 3 read-only jobs, P2 6/7 across 4 machines, P3 dry_run 2 green + 1 clean fail, P4 canary 2/2 green (explorer.primitive screen + flutter_pointer_tap saveDraft:false, P3 draft side-effect cleared). Probe 10 verified blob vs deployed file byte-equal. PR #7 REQUEST CHANGES: all 7 findings (H-01/H-02/H-03, M-01/M-02/M-03/M-04) closed in evidenceClosure (2026-08-09), verdict=fixed each."
     }
   }
 }

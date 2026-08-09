@@ -1,8 +1,8 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · GO 2026-08-09T01:15Z · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · **P1 3/3 + P2 6/7（4 台各 ≥1 只读）+ P3 dry_run 2 绿 1 干净失败** · P4 待 checkpoint
+> 最后更新：2026-08-09 Foundation PR4 **ActivatePilot 已执行** · GO 2026-08-09T01:15Z · `rel-pilot-2026-08-09-foundation-pr4` · `nonpayment_v1` · **P1 3/3 + P2 6/7（4 台各 ≥1 只读）+ P3 dry_run 2 绿 1 干净失败 + P4 canary 2/2 绿（P3 草稿副作用已清）** · 试点全链路 P1-P4 完成，待人裁定收口
 
-## 2026-08-08/09 Foundation PR4 — ActivatePilot（闸 B，P1/P2 已过）
+## 2026-08-08/09 Foundation PR4 — ActivatePilot（闸 B，P1-P4 已过）
 
 **状态**：**闸 B 已执行**（2026-08-09，人显式开闸「现在开闸，P1 起步」）。备份 shadow 态 → task-launch `autonomyPolicyMode=shadow→nonpayment_v1`、`pilotActors=[claude-pilot-20260809]`、`pilotAliases=[01,02,03,04]`、`releaseId→rel-pilot-2026-08-09-foundation-pr4` → cross-repo 同步 → 控制面 reload → **GO 探针 1–8 全绿**。**Pilot 激活**：`policyMode={mode:nonpayment_v1, active:true, pilotOnly:true, pilotConfigured:true}`。
 
@@ -10,7 +10,9 @@
 
 **P2（扩 4 台只读 observe）6/7 succeeded**：按设备 routing 白名单配能力——02 `device.list`+`snapshot`+`wechat.probe` 全绿（probe 截图 577KB）；03 `device.list`+`snapshot` 全绿；04 `device.list` 绿 + `xhs.observe.feed` **环境失败**（`ADAPTER_HTTP_UNAVAILABLE`，loopback 17896 对 04 不可达；同设备 device.list 成功 → 传输问题非能力/隔离）。全部 `approvalRequired=false`/`externalEffect=false`，四台 online 无 quarantine，`leases` 表空。**P2 判据（4 台各 ≥1 成功、无新增 quarantine）满足**。
 
-**P3（dry_run 试写，01）2 绿 1 干净失败**：`input_dry_run`+`open_dry_run` succeeded（publish 类能力 capability 级 externalEffect=true，但 audit 只含输入/打开发布流程动作，**无 submit、不真发**）；`image_dry_run` `VERIFICATION_FAILED`/`image-album-missing`（历史 staging 相册已不在手机，干净失败）。**三探针绿**：approval_audit 0 新增（仍 2 行试点前遗留）· financial 0 · leases 空。副作用：01 闲鱼留有**未发送草稿**（试写即此意，可手动清）。
+**P3（dry_run 试写，01）2 绿 1 干净失败**：`input_dry_run`+`open_dry_run` succeeded（publish 类能力 capability 级 externalEffect=true，但 audit 只含输入/打开发布流程动作，**无 submit、不真发**）；`image_dry_run` `VERIFICATION_FAILED`/`image-album-missing`（历史 staging 相册已不在手机，干净失败）。**三探针绿**：approval_audit 0 新增（仍 2 行试点前遗留）· financial 0 · leases 空。副作用：01 闲鱼留有**未发送草稿**（试写即此意）。
+
+**P4（explore/repair canary session，01）2/2 绿**：`session acquire --canary`（Tier 2 E1/R1，须 canary session）——`xiaowei.explorer.primitive {primitive:"screen"}` ✅（job_bf77511d，screen.png 2.1MB 拍到闲鱼发布编辑器 + P3 草稿，restoration ok）；`xianyu.probe.flutter_pointer_tap {saveDraft:false}` ✅（job_16f32260，typed-http 3 tap 0 fallback，**restoration 回 launcher，P3 未发送草稿随 discard 清除**）。两 job 均 `approvalRequired=false`/`externalEffect=false`/canary=true。**P4 后探针全绿**：control plane 仍 `nonpayment_v1/active/pilotOnly/pilotConfigured`、activeLeases=0、leases=0、sessions=0、approval_audit 仍 2、四台无 quarantine、financial 0。
 
 **隔离验证**：非 pilot actor（`codex-share-b`）提交 → authorization `block / AUTONOMY_PILOT_SCOPE_MISS / out_of_scope / shadow`；pilot actor+alias → `allow / NONPAYMENT_AUTONOMY_ACTIVE / in_scope / deployed-runtime`。
 
@@ -22,8 +24,10 @@
 5. **04 `xhs.observe.feed` 环境失败**（P2）：`ADAPTER_HTTP_UNAVAILABLE`（loopback 17896 不可达，restoration 亦 return_home_error）。非能力缺陷非隔离拦截，记为环境债（pitfall），未盲目重试。
 6. **dry_run 语义已证**（P3）：publish 类能力 capability 级 `externalEffect=true`，但 dry_run 只走输入/打开发布流程，**无 submit 动作、不真发**；approval_audit 0 新增、financial 0。input_dry_run 留未发送草稿在 01 闲鱼。
 7. **01 staging 相册缺失**（P3）：`XianyuStg2`（`/sdcard/Pictures/XianyuStg2/{a,b}.png`）已不在 01 手机 → `image_dry_run`/`full_dry_run` 干净失败（`image-album-missing`）。要跑 image/full 需先推新 staging 图并算 sha。
+8. **P3 草稿副作用已清**（P4）：flutter_pointer_tap `saveDraft:false` = discard-without-saving，restoration 回 launcher，01 闲鱼发布编辑器未发送草稿已清除。
+9. **interactive canary session 生命周期**（P4）：长跑 canary action（如 flutter 过渡验证跑满 60s lease）结束即自动释放 session；事后手动 release 返回 `SESSION_NOT_FOUND`（404），lease 行在 `expires_at` 后由 `cleanupExpiredLeases` **自清扫**（interactive 类直接删除，不 quarantine 不 recovery），终态 leases=0。证据链完整性与手动 release 成败无关。
 
-**下一步**：P4（explore/repair canary session）**待人 checkpoint**（image/full dry_run 需先补 staging 图）；runbook §11 清旧分支；~~PR7 review~~ **7/7 闭合**（`files.json` `evidenceClosure`：H-01/02/03 + M-01/02/03/04）。  
+**下一步**：**试点全链路 P1-P4 完成**，待人裁定——收口回滚到 shadow（§6 两级回滚）还是保持 pilot active 观察、或补 image/full dry_run（先推 staging 图）；runbook §11 清旧分支；~~PR7 review~~ **7/7 闭合**（`files.json` `evidenceClosure`：H-01/02/03 + M-01/02/03/04）。  
 **红线**：0 支付路径 · 0 douyin share_link · 0 xhs.comment.send · 非 pilot actor 已被硬拦。
 
 ## 2026-08-08 Foundation PR2 wiring + submit lock（已合 main）
