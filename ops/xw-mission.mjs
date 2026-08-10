@@ -7,6 +7,7 @@ import { OrchestrationStore } from "../scripts/lib/orchestration-store.mjs";
 import { ControlPlaneHttpClient, TypedJobWorker } from "../scripts/lib/typed-job-worker.mjs";
 import { MissionWorkerRouter, SessionWorkflowWorker } from "../scripts/lib/session-workflow-worker.mjs";
 import { runTaskOrchestrator } from "../scripts/lib/task-orchestrator.mjs";
+import { isAdvisorySafeTypedJob } from "../scripts/lib/capability-runtime-eligibility.mjs";
 
 function option(argv, name, fallback = undefined) {
   const index = argv.indexOf(name);
@@ -60,11 +61,10 @@ export async function loadLiveFleet({ registryUrl = "http://127.0.0.1:17930/", t
   if (!entryResponse.ok) throw new Error(`agent-entry unavailable (${entryResponse.status})`);
   const devices = parseAgentEntry(await entryResponse.text());
   const safeCapabilities = new Set((catalog.capabilities || [])
-    .filter((capability) => capability.policy?.availability === "implemented")
-    .filter((capability) => capability.policy?.runnableAsJob === true)
-    .filter((capability) => capability.policy?.externalEffect === false)
-    .filter((capability) => capability.policy?.approvalRequired === false)
-    .filter((capability) => ["read_only", "replay_safe"].includes(capability.idempotency))
+    // Registry authorization hints are null under deployed-runtime policy.
+    // This is only static/advisory eligibility; Control Plane remains the
+    // sole authority when TypedJobWorker submits the formal job.
+    .filter(isAdvisorySafeTypedJob)
     .map((capability) => capability.id));
   for (const device of devices) {
     device.capabilityIds = [...(catalog.routingByAlias?.[device.alias]?.capabilityIds || [])].filter((id) => safeCapabilities.has(id));
