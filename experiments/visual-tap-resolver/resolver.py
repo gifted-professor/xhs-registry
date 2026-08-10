@@ -558,6 +558,17 @@ def refine_component(
         # is the tappable unit.
         mask = np.full((h, w), 255, np.uint8)
         return mask, proposal.bbox, "text-box"
+    if (
+        config.skip_compact_grabcut
+        and proposal.kind == "component"
+        and proposal.score >= config.compact_grabcut_score
+    ):
+        # A high shape score on a compact component means the contour is already
+        # a clean shape (score blends fill/compactness/size); GrabCut would only
+        # tighten a noisy boundary at 100x the cost. Reuse the legal
+        # bbox-fallback full-rect output shape — no new mask shape, just
+        # skipping the expensive refine. Low scores still GrabCut.
+        return np.full((h, w), 255, np.uint8), proposal.bbox, "compact-skip"
     rect_x = max(1, x - crop_x)
     rect_y = max(1, y - crop_y)
     rect_w = min(w, crop_w - rect_x - 1)

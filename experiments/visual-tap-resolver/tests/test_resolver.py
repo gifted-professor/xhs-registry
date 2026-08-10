@@ -14,10 +14,12 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from resolver import (  # noqa: E402
+    Proposal,
     ResolverConfig,
     box_iou,
     detect_media_regions,
     overlapping_component,
+    refine_component,
     resize_for_analysis,
     resolve_image,
     safe_point,
@@ -306,6 +308,60 @@ class ResolverConfigTests(unittest.TestCase):
             "kind_taxonomy",
         ):
             self.assertEqual(getattr(config, field), getattr(defaults, field), field)
+
+
+class SkipCompactGrabCutTests(unittest.TestCase):
+    def test_high_score_component_skips_grabcut(self) -> None:
+        # B2: a component at/above compact_grabcut_score with
+        # skip_compact_grabcut=True must reuse the legal bbox-fallback full-rect
+        # output shape (no new shape), labeled compact-skip.
+        image = np.full((200, 300, 3), 240, np.uint8)
+        proposal = Proposal("component", (80, 60, 100, 80), 0.85)
+        mask, mask_box, method = refine_component(
+            image, proposal, ResolverConfig(skip_compact_grabcut=True, compact_grabcut_score=0.80)
+        )
+        self.assertEqual(method, "compact-skip")
+        self.assertEqual(mask_box, proposal.bbox)
+        self.assertEqual(int(cv2.countNonZero(mask)), mask.size, "compact-skip must be a full-rect mask")
+
+    def test_low_score_component_still_grabcuts(self) -> None:
+        image = np.full((200, 300, 3), 240, np.uint8)
+        proposal = Proposal("component", (80, 60, 100, 80), 0.5)
+        _, _, method = refine_component(
+            image, proposal, ResolverConfig(skip_compact_grabcut=True, compact_grabcut_score=0.80)
+        )
+        self.assertIn(method, ("grabcut", "bbox-fallback"))
+
+    def test_skip_off_is_unaffected(self) -> None:
+        image = np.full((200, 300, 3), 240, np.uint8)
+        proposal = Proposal("component", (80, 60, 100, 80), 0.85)
+        _, _, method = refine_component(
+            image, proposal, ResolverConfig(skip_compact_grabcut=False, compact_grabcut_score=0.80)
+        )
+        self.assertIn(method, ("grabcut", "bbox-fallback"))
+
+    def test_synthetic_hit_regions_survive_aggressive_skip(self) -> None:
+        # B2 survival guard (prototype of the C3 gate): even with the threshold
+        # low enough to skip 22 of 31 components, every one of the 12 synthetic
+        # hit regions must still contain a safe point.
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            synthetic_command(Namespace(output_dir=str(output)))
+            truth = json.loads((output / "ground-truth.json").read_text(encoding="utf-8"))
+            result = resolve_image(
+                output / "screen.png",
+                ResolverConfig(skip_compact_grabcut=True, compact_grabcut_score=0.70),
+            )
+            skipped = sum(1 for block in result["blocks"] if block["method"] == "compact-skip")
+            self.assertGreaterEqual(skipped, 10, "test premise: threshold should skip most components")
+            for region in truth["hitRegions"]:
+                ex, ey, ew, eh = region["bbox"]
+                hit = any(
+                    ex <= block["sourceSafePoint"][0] < ex + ew
+                    and ey <= block["sourceSafePoint"][1] < ey + eh
+                    for block in result["blocks"]
+                )
+                self.assertTrue(hit, f"safe point lost for {region['id']} under aggressive skip")
 
 
 class OverlappingComponentTests(unittest.TestCase):
