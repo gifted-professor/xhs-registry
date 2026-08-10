@@ -34,14 +34,62 @@ class StrictJsonError(ValueError):
     """A bounded JSON input could not be decoded unambiguously."""
 
 
+def add_config_args(parser: argparse.ArgumentParser) -> None:
+    """A/B switches shared by resolve/find/vision-pack/benchmark (Stage B/C).
+
+    Every flag maps onto a ResolverConfig field, which is part of the manifest
+    ``config`` basis -> toggling any of them changes every candidate_manifest_id
+    and consumers must re-emit vision packs. The one exception is ``--workers``:
+    it maps to the ``refine_workers`` resolve_image keyword argument and never
+    touches the manifest.
+    """
+    parser.add_argument("--weak-control", dest="weak_control", action="store_true", default=True,
+                        help="low-contrast control detection (default: on)")
+    parser.add_argument("--no-weak-control", dest="weak_control", action="store_false",
+                        help="disable low-contrast control detection")
+    parser.add_argument("--media-suppress", dest="media_suppression", action="store_true", default=True,
+                        help="media-region suppression (default: on)")
+    parser.add_argument("--no-media-suppress", dest="media_suppression", action="store_false",
+                        help="disable media-region suppression")
+    parser.add_argument("--grabcut-iters", type=int, default=None, metavar="N",
+                        help="GrabCut iterations (default: resolver default, 3)")
+    parser.add_argument("--skip-compact-grabcut", action="store_true",
+                        help="skip GrabCut for high-score compact components (B2)")
+    parser.add_argument("--compact-score", type=float, default=0.80, metavar="F",
+                        help="score threshold for --skip-compact-grabcut (default: 0.80)")
+    parser.add_argument("--half-res-media", action="store_true",
+                        help="detect media regions at half resolution (media_detection_scale=0.5, C1)")
+    parser.add_argument("--grabcut-crop-cap", type=int, default=0, metavar="N",
+                        help="downscale GrabCut crops longer than N px (0=off, B4)")
+    parser.add_argument("--merge-media", action="store_true",
+                        help="merge overlapping media regions (media_merge_iou=0.5, C1)")
+    parser.add_argument("--min-component-score", type=float, default=0.0, metavar="F",
+                        help="drop kind=component proposals below this score (C1)")
+    parser.add_argument("--no-kind-taxonomy", dest="kind_taxonomy", action="store_false", default=True,
+                        help="disable icon/button/card kind refinement (C2 A/B)")
+    parser.add_argument("--workers", type=int, default=None, metavar="N",
+                        help="parallel refine workers; NOT a config field, never affects manifest")
+
+
 def build_config(args: argparse.Namespace) -> ResolverConfig:
     """Build a config from CLI args, pre-warming the OCR engine when enabled so
     the one-time model load is not attributed to the page resolve."""
     enable_ocr = getattr(args, "ocr", False)
+    grabcut_iters = getattr(args, "grabcut_iters", None)
     config = ResolverConfig(
         max_side=args.max_side,
         max_blocks=args.max_blocks,
         enable_ocr=enable_ocr,
+        weak_control_detection=getattr(args, "weak_control", True),
+        media_suppression=getattr(args, "media_suppression", True),
+        grabcut_iterations=grabcut_iters if grabcut_iters is not None else ResolverConfig.grabcut_iterations,
+        skip_compact_grabcut=getattr(args, "skip_compact_grabcut", False),
+        compact_grabcut_score=getattr(args, "compact_score", ResolverConfig.compact_grabcut_score),
+        grabcut_crop_max_side=getattr(args, "grabcut_crop_cap", 0),
+        media_detection_scale=0.5 if getattr(args, "half_res_media", False) else 1.0,
+        media_merge_iou=0.5 if getattr(args, "merge_media", False) else 0.0,
+        min_component_score=getattr(args, "min_component_score", 0.0),
+        kind_taxonomy=getattr(args, "kind_taxonomy", True),
     )
     if enable_ocr:
         engine = get_ocr_engine(config.ocr_lang)
@@ -84,7 +132,7 @@ def resolve_command(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     config = build_config(args)
-    result = resolve_image(Path(args.input), config)
+    result = resolve_image(Path(args.input), config, refine_workers=getattr(args, "workers", None))
     serializable = serializable_result(result)
     write_json(output_dir / "blocks.json", serializable)
     roots = set(result["rootBlockIds"])
@@ -117,7 +165,7 @@ def find_command(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     config = build_config(args)
-    result = resolve_image(Path(args.input), config)
+    result = resolve_image(Path(args.input), config, refine_workers=getattr(args, "workers", None))
     matches = find_blocks_by_text(result, args.text)
     serializable = serializable_result(result)
     payload = {
@@ -150,7 +198,7 @@ def vision_pack_command(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     config = build_config(args)
-    result = resolve_image(Path(args.input), config)
+    result = resolve_image(Path(args.input), config, refine_workers=getattr(args, "workers", None))
     serializable = serializable_result(result)
     write_json(output_dir / "blocks.json", serializable)
 
@@ -237,11 +285,11 @@ def select_command(args: argparse.Namespace) -> int:
 
 
 def benchmark_command(args: argparse.Namespace) -> int:
-    config = ResolverConfig(max_side=args.max_side, max_blocks=args.max_blocks)
+    config = build_config(args)
     totals: list[float] = []
     stages: dict[str, list[float]] = {}
     for _ in range(args.iterations):
-        result = resolve_image(Path(args.input), config)
+        result = resolve_image(Path(args.input), config, refine_workers=getattr(args, "workers", None))
         totals.append(float(result["timingMs"]["total"]))
         for name, value in result["timingMs"].items():
             stages.setdefault(name, []).append(float(value))
@@ -322,6 +370,7 @@ def parser() -> argparse.ArgumentParser:
     resolve.add_argument("--ocr", action="store_true", help="run the OCR text pass")
     resolve.add_argument("--json", action="store_true", help="print blocks JSON to stdout")
     resolve.add_argument("--write-masks", action="store_true")
+    add_config_args(resolve)
     resolve.set_defaults(func=resolve_command)
 
     find = subparsers.add_parser("find", help="resolve then find blocks by text (no tap)")
@@ -332,6 +381,7 @@ def parser() -> argparse.ArgumentParser:
     find.add_argument("--max-blocks", type=int, default=256)
     find.add_argument("--ocr", action="store_true", help="run the OCR text pass")
     find.add_argument("--json", action="store_true", help="print find JSON to stdout")
+    add_config_args(find)
     find.set_defaults(func=find_command)
 
     vision_pack = subparsers.add_parser(
@@ -344,6 +394,7 @@ def parser() -> argparse.ArgumentParser:
     vision_pack.add_argument("--max-blocks", type=int, default=256)
     vision_pack.add_argument("--ocr", action="store_true", help="include OCR labels before Vision")
     vision_pack.add_argument("--json", action="store_true", help="print pack JSON to stdout")
+    add_config_args(vision_pack)
     vision_pack.set_defaults(func=vision_pack_command)
 
     select = subparsers.add_parser(
@@ -366,6 +417,7 @@ def parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--max-side", type=int, default=1280)
     benchmark.add_argument("--max-blocks", type=int, default=256)
     benchmark.add_argument("--reference-dump-ms", type=float)
+    add_config_args(benchmark)
     benchmark.set_defaults(func=benchmark_command)
 
     synthetic = subparsers.add_parser("synthetic", help="generate a deterministic phone UI fixture")

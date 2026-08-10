@@ -55,6 +55,18 @@ class ResolverConfig:
     # it never replaces the resolver's own coordinate geometry.
     enable_ocr: bool = False
     ocr_lang: str = "ch"
+    # ---- Stage B/C A/B switches (B1). All default to today's exact output;
+    # nothing reads these fields until the later stages land. Each field is
+    # part of the serialized ``config`` in the manifest basis, so toggling any
+    # of them changes every candidate_manifest_id -> consumers must re-emit
+    # vision packs after a toggle (documented consequence, see B1 commit).
+    skip_compact_grabcut: bool = False
+    compact_grabcut_score: float = 0.80
+    grabcut_crop_max_side: int = 0  # 0 = off
+    media_detection_scale: float = 1.0
+    media_merge_iou: float = 0.0  # 0 = off
+    min_component_score: float = 0.0
+    kind_taxonomy: bool = True
 
 
 @dataclass(frozen=True)

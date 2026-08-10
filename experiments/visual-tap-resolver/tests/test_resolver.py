@@ -231,6 +231,83 @@ class SyntheticIntegrationTests(unittest.TestCase):
                 )
 
 
+class ResolverConfigTests(unittest.TestCase):
+    def test_stage_b_c_fields_default_to_pre_b1_output(self) -> None:
+        config = ResolverConfig()
+        # B1 added these A/B switches; every default must preserve the exact
+        # pre-B1 output (nothing reads them until stages B2/C1/C2 land).
+        self.assertFalse(config.skip_compact_grabcut)
+        self.assertEqual(config.compact_grabcut_score, 0.80)
+        self.assertEqual(config.grabcut_crop_max_side, 0)
+        self.assertEqual(config.media_detection_scale, 1.0)
+        self.assertEqual(config.media_merge_iou, 0.0)
+        self.assertEqual(config.min_component_score, 0.0)
+        self.assertTrue(config.kind_taxonomy)
+        # previously-unexposed fields keep their historical defaults
+        self.assertTrue(config.weak_control_detection)
+        self.assertTrue(config.media_suppression)
+        self.assertEqual(config.grabcut_iterations, 3)
+
+    def test_add_config_args_flags_parse(self) -> None:
+        import argparse
+
+        from visual_tap_demo import add_config_args
+
+        parser = argparse.ArgumentParser()
+        add_config_args(parser)
+        args = parser.parse_args(
+            [
+                "--no-weak-control",
+                "--no-media-suppress",
+                "--grabcut-iters", "1",
+                "--skip-compact-grabcut",
+                "--compact-score", "0.7",
+                "--half-res-media",
+                "--grabcut-crop-cap", "360",
+                "--merge-media",
+                "--min-component-score", "0.3",
+                "--no-kind-taxonomy",
+                "--workers", "4",
+            ]
+        )
+        self.assertFalse(args.weak_control)
+        self.assertFalse(args.media_suppression)
+        self.assertEqual(args.grabcut_iters, 1)
+        self.assertTrue(args.skip_compact_grabcut)
+        self.assertAlmostEqual(args.compact_score, 0.7)
+        self.assertTrue(args.half_res_media)
+        self.assertEqual(args.grabcut_crop_cap, 360)
+        self.assertTrue(args.merge_media)
+        self.assertAlmostEqual(args.min_component_score, 0.3)
+        self.assertFalse(args.kind_taxonomy)
+        self.assertEqual(args.workers, 4)
+
+    def test_build_config_defaults_match_resolver_defaults(self) -> None:
+        import argparse
+
+        from visual_tap_demo import add_config_args, build_config
+
+        parser = argparse.ArgumentParser()
+        add_config_args(parser)
+        parser.add_argument("--max-side", type=int, default=1280)
+        parser.add_argument("--max-blocks", type=int, default=256)
+        config = build_config(parser.parse_args([]))
+        defaults = ResolverConfig()
+        for field in (
+            "weak_control_detection",
+            "media_suppression",
+            "grabcut_iterations",
+            "skip_compact_grabcut",
+            "compact_grabcut_score",
+            "grabcut_crop_max_side",
+            "media_detection_scale",
+            "media_merge_iou",
+            "min_component_score",
+            "kind_taxonomy",
+        ):
+            self.assertEqual(getattr(config, field), getattr(defaults, field), field)
+
+
 class OverlappingComponentTests(unittest.TestCase):
     def test_bbox_prefilter_selects_only_the_seed_overlapping_label(self) -> None:
         # Two disconnected blobs: one inside the seed rect, one far outside.
