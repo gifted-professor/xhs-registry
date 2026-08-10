@@ -115,6 +115,8 @@ function createControlServer() {
     ] });
     if (req.method === "GET" && req.url === "/control/v1/capabilities") return json(res, 200, { capabilities: [
       { id: "xianyu.publish.open_dry_run", appId: "xianyu", risk: "R1", maturity: "E2", idempotency: "replay_safe",
+        capabilityContractHash: "a".repeat(64), capabilityContractHashAlgorithm: "xhs.capability-contract.sha256-canonical-json.v2",
+        implementationClosureHash: "b".repeat(64), tcbManifestRef: "tcb-fixture",
         description: "Open the publish flow without committing",
         inputSchema: { type: "object", properties: { source: { type: "string" } } },
         outputSchema: { type: "object", properties: { opened: { type: "boolean" } } },
@@ -447,6 +449,10 @@ test("capability catalog derives approval policy, lints misleading modes, and ma
   assert.equal(open.policy.runnableAsJob, null);
   assert.equal(open.policy.authorizationHint, "context_required");
   assert.equal(open.policy.implementationSupport.job, true);
+  assert.equal(open.capabilityContractHash, "a".repeat(64));
+  assert.equal(open.capabilityContractHashAlgorithm, "xhs.capability-contract.sha256-canonical-json.v2");
+  assert.equal(open.implementationClosureHash, "b".repeat(64));
+  assert.equal(open.tcbManifestRef, "tcb-fixture");
   assert.deepEqual(open.eligibleAliases, ["01", "03"]);
   // external_effect stays a static fact; no local approval derivation
   assert.equal(saveDraft.policy.externalEffect, true);
