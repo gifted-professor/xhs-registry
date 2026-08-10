@@ -117,6 +117,21 @@ class DeterminismTests(unittest.TestCase):
             self.assertEqual(first["blocks"], second["blocks"])
             self.assertEqual(first["rootBlockIds"], second["rootBlockIds"])
 
+    def test_resolve_does_not_mutate_source_or_analysis(self) -> None:
+        # The synthetic frame is 540x1200 under max_side=1280, so analysis IS
+        # source after A5 (no copy). If any resolver stage mutates the analysis
+        # array in place, the decoded source is corrupted too — guard that the
+        # returned _source still matches the file bytes exactly.
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            synthetic_command(Namespace(output_dir=str(output)))
+            fresh = cv2.imread(str(output / "screen.png"))
+            result = resolve_image(output / "screen.png")
+            self.assertTrue(
+                np.array_equal(result["_source"], fresh),
+                "resolve_image mutated the decoded source image (aliased analysis)",
+            )
+
 
 class SyntheticIntegrationTests(unittest.TestCase):
     def test_weak_control_detection_finds_low_contrast_toggle(self) -> None:

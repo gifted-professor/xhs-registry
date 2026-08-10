@@ -100,7 +100,11 @@ def resize_for_analysis(image: np.ndarray, max_side: int) -> tuple[np.ndarray, f
     height, width = image.shape[:2]
     scale = min(1.0, max_side / max(height, width))
     if scale == 1.0:
-        return image.copy(), scale
+        # No downsampling needed: reuse the array instead of copying. Safe only
+        # because the resolver never mutates the analysis array in place (the
+        # lone indexed assignment is a local seed mask, not analysis). The
+        # mutation-safety test guards this aliasing contract.
+        return image, scale
     resized = cv2.resize(
         image,
         (max(1, round(width * scale)), max(1, round(height * scale))),
