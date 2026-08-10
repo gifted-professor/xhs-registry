@@ -17,6 +17,7 @@
 
 import { loadFoundationCapabilities } from "../scripts/lib/foundation-capabilities.mjs";
 import { loadWorkflows, workflowIsDirectlyRunnable } from "../scripts/lib/workflow-catalog.mjs";
+import { supportsTypedJob } from "../scripts/lib/capability-runtime-eligibility.mjs";
 
 const REGISTRY = (process.env.XHS_REGISTRY_URL || "http://127.0.0.1:17930").replace(/\/$/, "");
 
@@ -156,7 +157,7 @@ function classifyCapability(cap, readyAliases, entry) {
   if (policy.canaryRequired || policy.runnableAsCanarySession) {
     return { bucket: "unavailable", reason: "仅 canary", devices: eligible };
   }
-  if (!policy.runnableAsJob) {
+  if (!supportsTypedJob(cap)) {
     return {
       bucket: "unavailable",
       reason: `availability=${policy.availability || "unknown"}`,
@@ -170,7 +171,7 @@ function classifyCapability(cap, readyAliases, entry) {
       devices: eligible,
     };
   }
-  return { bucket: "runnable", reason: "可直接运行", devices: readyEligible };
+  return { bucket: "runnable", reason: "可提交，授权由控制面决定", devices: readyEligible };
 }
 
 function classifyRecipe(recipe, includeAll) {
