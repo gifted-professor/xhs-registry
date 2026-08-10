@@ -101,6 +101,49 @@ Outputs:
 - `vision-pack.json`: frame + candidate-manifest + query + overlay bindings;
 - `vision-prompt.txt`: strict block-only response instructions.
 
+## Speed & accuracy stages (2026-08-10)
+
+Local block-split chain was reworked in stages (commits carry the tag; see the
+registry `PROGRESS.md` section and knowledge `visual-tap-resolver-cv-split-20260810`).
+
+- **A — bit-identical speedup**: single shared gray pass, bbox-scoped media
+  masks, overlap prefilter, parallel refine (output byte-identical, serial
+  fallback), full-rect safe-point analytic shortcut. Synthetic total
+  **588.8ms → 182.8ms**.
+- **B — A/B GrabCut reduction** (config switches, all off by default):
+  `--grabcut-iters 1` → **111ms**; `--skip-compact-grabcut --compact-score 0.70`
+  → **40.5ms**. B1 was the first `ResolverConfig` field addition and is the
+  **manifest-change commit**: the serialized `config` is part of the
+  `candidate_manifest_id` basis, so toggling any flag forces consumers to
+  re-emit vision packs. `--workers` is *not* a config field and never touches
+  the manifest.
+- **C — accuracy**: `--half-res-media --merge-media --min-component-score F`
+  cut the immersive fixture (douyin 256-cap proxy) from ~180 blocks to
+  **18–21** while keeping every named control; `classify_kind` adds
+  icon/button/card semantics (`--no-kind-taxonomy` reverts); the C3 test gates
+  assert all 12 synthetic hit regions and all 9 immersive controls.
+- **D — OCR crash fix**: oneDNN is disabled before PaddleOCR init
+  (`FLAGS_use_mkldnn=0` / `PADDLE_PDX_DISABLE_MKLDNN=1` /
+  `enable_mkldnn=False`); `resolve --ocr` runs on this machine.
+
+`visual_tap_demo.py immersive --output-dir <dir>` generates the douyin-like
+fixture (texture band + 5 named controls + 4 tabs + `ground-truth.json`).
+`accept_benchmark.py` is the real-page acceptance template:
+
+```bash
+.venv-ocr/Scripts/python.exe accept_benchmark.py \
+  --evidence <evidence-root> --half-res-media --merge-media --min-component-score 0.55
+```
+
+Evidence migration checklist (real-page gates stay deferred until this is done):
+source machine `DESKTOP-3I1EVHE`; source roots `C:\Users\Public\xhs-agent-runs`
+(long-lived) and `...\Temp\xhs-explore` (transient/config-machine); copy the 9
+`page-{a,b,c}.{png,xml}` pairs per app (`xhs`/`douyin`/`xianyu`) into
+`<evidence-root>/{app}/`, verify end-to-end SHA-256, and confirm each page by the
+XML `package=` attribute (file names are not identity). Never commit binary
+screenshots. With no evidence the script exits cleanly ("evidence not present",
+code 2) — it never crashes and never reports a false PASS.
+
 ## Interpreting the result
 
 The demo discovers visual regions; it does **not** prove Android clickability or
