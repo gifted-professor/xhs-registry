@@ -28,6 +28,20 @@ from resolver import (  # noqa: E402
 from visual_tap_demo import synthetic_command  # noqa: E402
 
 
+def _ref_full_rect_safe_point(h: int, w: int) -> tuple[int, int, float]:
+    """Reference safe_point for a full-rect mask via the distance-transform
+    path (what A6's analytic shortcut must replicate exactly)."""
+    binary = np.full((h, w), 255, np.uint8)
+    padded = cv2.copyMakeBorder(binary, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+    distance = cv2.distanceTransform(padded, cv2.DIST_L2, 5)[1:-1, 1:-1]
+    maximum = float(distance.max())
+    candidates = np.argwhere(distance >= max(0.0, maximum - 1e-6))
+    target = np.array([(h - 1) / 2.0, (w - 1) / 2.0])
+    best_index = int(np.argmin(np.square(candidates - target).sum(axis=1)))
+    best_y, best_x = candidates[best_index]
+    return int(best_x), int(best_y), maximum
+
+
 class SafePointTests(unittest.TestCase):
     def test_full_mask_resolves_near_center(self) -> None:
         mask = np.full((80, 120), 255, np.uint8)
@@ -35,6 +49,18 @@ class SafePointTests(unittest.TestCase):
         self.assertLessEqual(abs(x - 260), 1)
         self.assertLessEqual(abs(y - 340), 1)
         self.assertGreater(clearance, 38)
+
+    def test_full_rect_shortcut_matches_distance_transform(self) -> None:
+        # A6 guard: the analytic full-rect shortcut must replicate the
+        # distance-transform plateau + row-major argmin exactly for every
+        # odd/even parity. If any mismatch, drop the shortcut.
+        for h, w in [(79, 119), (80, 120), (81, 121), (82, 120), (80, 121), (81, 120), (79, 120), (120, 80)]:
+            reference = _ref_full_rect_safe_point(h, w)
+            x, y, clearance = safe_point(np.full((h, w), 255, np.uint8), (0, 0, w, h))
+            self.assertEqual(
+                (x, y, clearance), reference,
+                f"full-rect shortcut diverged from distance transform at h={h} w={w}",
+            )
 
     def test_rectangle_safe_point_is_inside(self) -> None:
         mask = np.zeros((80, 120), np.uint8)

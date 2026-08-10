@@ -600,6 +600,25 @@ def safe_point(mask: np.ndarray, bbox: tuple[int, int, int, int]) -> tuple[int, 
     if not cv2.countNonZero(binary):
         x, y, w, h = bbox
         return x + w // 2, y + h // 2, 0.0
+    x0, y0, w, h = bbox
+    if cv2.countNonZero(binary) == binary.size:
+        # Full-rectangle mask (row-band / media-center / text-box / bbox-fallback):
+        # max distance is min((h+1)//2, (w+1)//2) and the plateau (pixels within
+        # 1e-6 of max) is rows [maxd-1, h-maxd] x cols [maxd-1, w-maxd]; the
+        # row-major-first argmin toward the mask center picks the same pixel the
+        # distance-transform path would. Verified parity-identical for all
+        # odd/even h,w (test_full_rect_shortcut_matches_distance_transform).
+        # Note this is NOT the bbox center (e.g. a 120x80 rect resolves to
+        # +59/+39, not +60/+40) — the analytic form must replicate the plateau.
+        maxd = min((h + 1) // 2, (w + 1) // 2)
+        rows = np.arange(maxd - 1, h - maxd + 1, dtype=np.float64)
+        cols = np.arange(maxd - 1, w - maxd + 1, dtype=np.float64)
+        Y, X = np.meshgrid(rows, cols, indexing="ij")
+        d2 = (Y - (h - 1) / 2.0) ** 2 + (X - (w - 1) / 2.0) ** 2
+        flat = int(np.argmin(d2))  # C-order -> row-major first minimum
+        best_y = int(flat // len(cols)) + (maxd - 1)
+        best_x = int(flat % len(cols)) + (maxd - 1)
+        return x0 + best_x, y0 + best_y, float(maxd)
     # OpenCV needs an explicit zero-valued boundary. Without it, a full
     # rectangular mask has no background seed and may incorrectly resolve to a
     # corner instead of the center.
@@ -611,8 +630,7 @@ def safe_point(mask: np.ndarray, bbox: tuple[int, int, int, int]) -> tuple[int, 
     target = np.array([(mask_height - 1) / 2.0, (mask_width - 1) / 2.0])
     best_index = int(np.argmin(np.square(candidates - target).sum(axis=1)))
     best_y, best_x = candidates[best_index]
-    x, y, _, _ = bbox
-    return x + int(best_x), y + int(best_y), maximum
+    return x0 + int(best_x), y0 + int(best_y), maximum
 
 
 def _axis_scales(scale: float | tuple[float, float]) -> tuple[float, float]:
