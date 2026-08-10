@@ -65,6 +65,8 @@ def add_config_args(parser: argparse.ArgumentParser) -> None:
                         help="merge overlapping media regions (media_merge_iou=0.5, C1)")
     parser.add_argument("--min-component-score", type=float, default=0.0, metavar="F",
                         help="drop kind=component proposals below this score (C1)")
+    parser.add_argument("--min-overlay-area", type=float, default=None, metavar="F",
+                        help="on-media overlay size floor as image-area ratio (default: 0.0015)")
     parser.add_argument("--no-kind-taxonomy", dest="kind_taxonomy", action="store_false", default=True,
                         help="disable icon/button/card kind refinement (C2 A/B)")
     parser.add_argument("--workers", type=int, default=None, metavar="N",
@@ -89,6 +91,11 @@ def build_config(args: argparse.Namespace) -> ResolverConfig:
         media_detection_scale=0.5 if getattr(args, "half_res_media", False) else 1.0,
         media_merge_iou=0.5 if getattr(args, "merge_media", False) else 0.0,
         min_component_score=getattr(args, "min_component_score", 0.0),
+        media_overlay_min_area_ratio=(
+            args.min_overlay_area
+            if getattr(args, "min_overlay_area", None) is not None
+            else ResolverConfig.media_overlay_min_area_ratio
+        ),
         kind_taxonomy=getattr(args, "kind_taxonomy", True),
     )
     if enable_ocr:
@@ -317,6 +324,106 @@ def benchmark_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def immersive_command(args: argparse.Namespace) -> int:
+    """Generate a douyin-like immersive feed page: a large texture-rich media
+    band that over-fragments under default media detection (candidate flood),
+    five named overlay controls on the media, and a four-tab bottom nav.
+
+    ``screen.png`` is the resolve input; ``ground-truth.json`` carries the 9
+    named hit regions (top-controls + tab-*) used by the C1/C3 survival gate.
+    """
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    width, height = 540, 1200
+    rng = np.random.default_rng(11)
+    image = np.full((height, width, 3), 16, np.uint8)
+    ground_truth: list[dict[str, object]] = []
+
+    # ---- Large textured media band (rows ~90..1000). Many small dense texture
+    # elements on a coarse grid whose inter-element gap (~18-26px) sits just
+    # above the 9x9 close kernel: at full resolution the elements do NOT bridge
+    # into a media-sized blob, so texture candidates flood the cap (the douyin
+    # immersive over-segmentation problem); at half resolution the gaps halve to
+    # ~9-13px, close bridges the elements into ONE media region, and the whole
+    # surface is suppressed.
+    for row in range(90, 1000):
+        shade = 40 + int(60 * (row - 90) / 910)
+        image[row, :, :] = (shade, shade + 34, min(255, 100 + int(50 * (row - 90) / 910)))
+    for gy in range(0, 23):
+        for gx in range(0, 14):
+            cx = 20 + gx * 40 + int(rng.integers(-4, 5))
+            cy = 100 + gy * 40
+            if cy > 985:
+                continue
+            # Ragged texture cluster (not a clean glyph): several small specks
+            # with holes between them, so the element's shape score stays low and
+            # the media suppression can tell it apart from a real control glyph.
+            hue = int(rng.integers(30, 220))
+            for _ in range(int(rng.integers(4, 7))):
+                sx = cx + int(rng.integers(-9, 10))
+                sy = cy + int(rng.integers(-9, 10))
+                r = int(rng.integers(2, 5))
+                cv2.circle(image, (sx, sy), r, (hue, int(rng.integers(90, 240)), int(rng.integers(90, 240))), -1)
+
+    # ---- 5 named overlay controls on the media surface. Drawn as solid,
+    # compact, high-contrast glyphs (as douyin renders them) so the fixture
+    # exercises C1's trade-off: aggressive media suppression must NOT kill a
+    # real on-media control.
+    def icon_bbox(cx: int, cy: int, half: int) -> list[int]:
+        return [cx - half, cy - half, half * 2, half * 2]
+
+    back = (46, 140)
+    cv2.circle(image, back, 18, (235, 235, 235), 3)
+    cv2.line(image, (back[0] + 6, back[1] - 10), (back[0] - 8, back[1]), (235, 235, 235), 3)
+    cv2.line(image, (back[0] + 6, back[1] + 10), (back[0] - 8, back[1]), (235, 235, 235), 3)
+    ground_truth.append({"id": "back", "bbox": icon_bbox(back[0], back[1], 24)})
+
+    search = (490, 140)
+    cv2.circle(image, search, 16, (235, 235, 235), 2)
+    cv2.line(image, (search[0] + 10, search[1] + 10), (search[0] + 18, search[1] + 18), (235, 235, 235), 3)
+    ground_truth.append({"id": "search", "bbox": icon_bbox(search[0], search[1], 24)})
+
+    follow = (150, 150)
+    cv2.rectangle(image, (follow[0] - 34, follow[1] - 14), (follow[0] + 34, follow[1] + 14), (255, 82, 82), -1)
+    cv2.rectangle(image, (follow[0] - 34, follow[1] - 14), (follow[0] + 34, follow[1] + 14), (245, 245, 245), 1)
+    cv2.line(image, (follow[0], follow[1] - 8), (follow[0], follow[1] + 8), (255, 255, 255), 3)
+    cv2.line(image, (follow[0] - 8, follow[1]), (follow[0] + 8, follow[1]), (255, 255, 255), 3)
+    ground_truth.append({"id": "follow", "bbox": [follow[0] - 40, follow[1] - 20, 80, 40]})
+
+    pause = (496, 600)
+    # Two thick filled bars, 16px wide each — a solid glyph, not thin strokes.
+    cv2.rectangle(image, (pause[0] - 14, pause[1] - 30), (pause[0] - 2, pause[1] + 30), (235, 235, 235), -1)
+    cv2.rectangle(image, (pause[0] + 2, pause[1] - 30), (pause[0] + 14, pause[1] + 30), (235, 235, 235), -1)
+    ground_truth.append({"id": "pause", "bbox": icon_bbox(pause[0], pause[1], 34)})
+
+    mute = (496, 900)
+    # Solid speaker: filled cone + filled circle, one connected glyph.
+    cv2.fillConvexPoly(
+        image,
+        np.array([[mute[0] + 2, 876], [mute[0] - 22, 888], [mute[0] - 22, 912], [mute[0] + 2, 924]]),
+        (235, 235, 235),
+    )
+    cv2.circle(image, (mute[0] + 26, mute[1] + 4), 14, (235, 235, 235), -1)
+    ground_truth.append({"id": "mute", "bbox": icon_bbox(mute[0], mute[1], 40)})
+
+    # ---- Bottom nav (4 tabs).
+    nav_y = 1080
+    cv2.rectangle(image, (0, nav_y), (width, height), (255, 255, 255), -1)
+    for index, center_x in enumerate([68, 202, 338, 472], start=1):
+        cv2.circle(image, (center_x, 1124), 21, (50 + index * 34, 180, 110 + index * 20), -1)
+        cv2.rectangle(image, (center_x - 30, 1161), (center_x + 30, 1171), (130, 130, 130), -1)
+        ground_truth.append({"id": f"tab-{index}", "bbox": [center_x - 48, 1090, 96, 94]})
+
+    cv2.imwrite(str(output_dir / "screen.png"), image)
+    write_json(
+        output_dir / "ground-truth.json",
+        {"resolution": [width, height], "hitRegions": ground_truth},
+    )
+    print(f"SCREEN={output_dir / 'screen.png'}")
+    print(f"GROUND_TRUTH={output_dir / 'ground-truth.json'}")
+    return 0
+
+
 def synthetic_command(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -423,6 +530,12 @@ def parser() -> argparse.ArgumentParser:
     synthetic = subparsers.add_parser("synthetic", help="generate a deterministic phone UI fixture")
     synthetic.add_argument("--output-dir", required=True)
     synthetic.set_defaults(func=synthetic_command)
+
+    immersive = subparsers.add_parser(
+        "immersive", help="generate a douyin-like immersive feed fixture (C1/C3 gate)"
+    )
+    immersive.add_argument("--output-dir", required=True)
+    immersive.set_defaults(func=immersive_command)
     return root
 
 

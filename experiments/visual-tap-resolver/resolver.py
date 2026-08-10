@@ -34,7 +34,8 @@ class ResolverConfig:
     media_min_area_ratio: float = 0.22
     media_edge_density: float = 0.045
     media_saturation_mean: float = 28.0
-    media_overlay_max_area_ratio: float = 0.004
+    media_overlay_max_area_ratio: float = 0.008
+    media_overlay_min_area_ratio: float = 0.0015
     media_overlay_edge_margin: int = 20
     media_overlay_score: float = 0.68
     media_card_min_area_ratio: float = 0.02
@@ -173,12 +174,30 @@ def detect_media_regions(
     ``gray`` is the pre-blurred 5x5 grayscale of ``image`` when supplied
     (callers that already computed it avoid a duplicate full-image conversion);
     otherwise it is computed here. Bit-identical either way.
+
+    ``config.media_detection_scale < 1.0`` runs the whole detection on a
+    downscaled copy, then maps each region bbox back to the original resolution
+    (conservative floor/ceil so media is never under-covered). Coarse detection
+    merges fine texture islands into one big region, so per-texture candidates
+    are suppressed instead of flooding the block cap. The edge_density /
+    saturation_mean metadata are measured in detection space; they are payload
+    only and are not read by ``filter_proposals_by_media``.
     """
 
     height, width = image.shape[:2]
     image_area = width * height
+    scale = config.media_detection_scale
+    if scale < 1.0:
+        det_width = max(1, round(width * scale))
+        det_height = max(1, round(height * scale))
+        det = cv2.resize(image, (det_width, det_height), interpolation=cv2.INTER_AREA)
+        if gray is not None:
+            gray = cv2.resize(gray, (det_width, det_height), interpolation=cv2.INTER_AREA)
+    else:
+        det = image
+        det_width, det_height = width, height
     if gray is None:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(det, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(gray, 40, 120)
     # Close texture into solid blobs, then fill holes so a photo becomes one region.
@@ -192,18 +211,26 @@ def detect_media_regions(
     contours, _ = cv2.findContours(blobs, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     # Physical screen chrome (status bar, top app bar, bottom nav) is never media.
-    top_ui_limit = round(height * 0.10)
-    bottom_ui_start = round(height * 0.93)
+    top_ui_limit = round(det_height * 0.10)
+    bottom_ui_start = round(det_height * 0.93)
 
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(det, cv2.COLOR_BGR2HSV)
     saturation = hsv[:, :, 1]
+    det_area = det_width * det_height
+
+    def to_source(x: int) -> int:
+        return int(floor(x / scale)) if scale < 1.0 else x
+
+    def to_source_size(length: int) -> int:
+        return int(ceil((length / scale))) if scale < 1.0 else length
+
     regions: list[MediaRegion] = []
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
         area = w * h
-        if area < image_area * config.media_min_area_ratio:
+        if area < det_area * config.media_min_area_ratio:
             continue
-        if w < width * 0.4 or h < height * 0.18:
+        if w < det_width * 0.4 or h < det_height * 0.18:
             continue
         # Re-derive a tight bounding box from this component's own filled pixels
         # so a rectangular bbox never swallows adjacent UI bars. Do it on a mask
@@ -224,23 +251,76 @@ def detect_media_regions(
         ty = max(ty, top_ui_limit)
         bottom = min(ty + th, bottom_ui_start)
         th = bottom - ty
-        if th < height * 0.15:
+        if th < det_height * 0.15:
             continue
         region_edges = edges[ty : ty + th, tx : tx + tw]
         edge_density = float(cv2.countNonZero(region_edges) / max(1, region_edges.size))
         sat_mean = float(saturation[ty : ty + th, tx : tx + tw].mean())
         if edge_density < config.media_edge_density and sat_mean < config.media_saturation_mean:
             continue
+        # Map the detection-space bbox back to the original resolution,
+        # conservatively so the media surface is never under-covered.
+        sx = to_source(tx)
+        sy = to_source(ty)
+        sw = to_source_size(tw)
+        sh = to_source_size(th)
+        sx = max(0, min(sx, width - 1))
+        sy = max(0, min(sy, height - 1))
+        sw = min(sw, width - sx)
+        sh = min(sh, height - sy)
         regions.append(
             MediaRegion(
-                bbox=(tx, ty, tw, th),
-                area_ratio=round((tw * th) / image_area, 4),
+                bbox=(sx, sy, sw, sh),
+                area_ratio=round((sw * sh) / image_area, 4),
                 edge_density=round(edge_density, 4),
                 saturation_mean=round(sat_mean, 2),
             )
         )
     regions.sort(key=lambda region: -region.area_ratio)
+    if config.media_merge_iou > 0.0:
+        regions = merge_media_regions(regions, config.media_merge_iou, image_area)
     return regions
+
+
+def merge_media_regions(
+    regions: list[MediaRegion], iou_threshold: float, image_area: int
+) -> list[MediaRegion]:
+    """Greedily merge overlapping media regions (``media_merge_iou > 0``).
+
+    Largest region first; any region whose bbox IoU with the seed is at or above
+    the threshold is folded into the seed's union bbox. The union keeps the
+    seed's metadata (they are payload only). Regions whose detection-space
+    textures were fragmented by the media scale are joined back into one surface
+    so suppression covers them as a single media block.
+    """
+
+    if iou_threshold <= 0.0 or len(regions) <= 1:
+        return regions
+    ordered = sorted(regions, key=lambda region: -region.area_ratio)
+    merged: list[MediaRegion] = []
+    while ordered:
+        seed = ordered.pop(0)
+        bx, by, bw, bh = seed.bbox
+        carry: list[MediaRegion] = []
+        for other in ordered:
+            if box_iou(seed.bbox, other.bbox) >= iou_threshold:
+                x1 = min(bx, other.bbox[0])
+                y1 = min(by, other.bbox[1])
+                x2 = max(bx + bw, other.bbox[0] + other.bbox[2])
+                y2 = max(by + bh, other.bbox[1] + other.bbox[3])
+                bx, by, bw, bh = x1, y1, x2 - x1, y2 - y1
+            else:
+                carry.append(other)
+        ordered = carry
+        merged.append(
+            MediaRegion(
+                bbox=(bx, by, bw, bh),
+                area_ratio=round((bw * bh) / image_area, 4),
+                edge_density=seed.edge_density,
+                saturation_mean=seed.saturation_mean,
+            )
+        )
+    return merged
 
 
 def is_media_overlay(
@@ -257,11 +337,27 @@ def is_media_overlay(
     rx, ry, rw, rh = region.bbox
     area = w * h
     if area > image_area * config.media_overlay_max_area_ratio:
+        # Above the overlay band. The band top (0.8% of frame) fills the gap to
+        # media_card_min_area_ratio (2%): a compact button like follow (80x40 on
+        # a 540x1200 frame) is a control, not media texture or a card.
         return False
-    if proposal.score < config.media_overlay_score:
+    if area < image_area * config.media_overlay_min_area_ratio:
+        # A speck, not a tappable control. Real controls (pause/mute/back) at
+        # analysis resolution are 25-60px -> >= ~1000px^2; texture fragments
+        # (dots, chips) are ~150-500px^2. Without this floor a clean high-score
+        # texture speck is indistinguishable from a small control glyph.
         return False
     aspect = max(w, h) / max(1, min(w, h))
     if aspect > 3.0:
+        return False
+    # A compact shape in the overlay size band is likely a control glyph
+    # (pause is two bars with a gap -> modest fill -> score ~0.65; an outlined
+    # search icon -> ~0.61), so allow it slightly under the score gate. Only
+    # shapes that clear the size floor above qualify, so texture specks do not
+    # ride the relaxation.
+    compact = aspect <= 2.2
+    score_floor = config.media_overlay_score - 0.10 if compact else config.media_overlay_score
+    if proposal.score < score_floor:
         return False
     margin = config.media_overlay_edge_margin
     near_edge = (
@@ -272,7 +368,7 @@ def is_media_overlay(
     )
     # Strong, compact shapes survive anywhere on the media (pause/mute icons sit
     # mid-frame); near the edge we also allow slightly weaker close/scan chips.
-    return proposal.score >= config.media_overlay_score + 0.06 or near_edge
+    return proposal.score >= config.media_overlay_score + 0.06 or near_edge or compact
 
 
 def is_media_card(proposal: Proposal, config: ResolverConfig, image_area: int) -> bool:
@@ -837,6 +933,15 @@ def resolve_image(
     if config.weak_control_detection:
         raw_proposals = raw_proposals + weak_control_proposals(analysis, config, gray3)
     proposals = deduplicate_proposals(raw_proposals, config.max_blocks)
+    if config.min_component_score > 0.0:
+        # C1 grey-noise gate: drop low-confidence kind=component proposals only.
+        # Rows and text are structural and never gated here. Runs after the first
+        # dedup so duplicates are already collapsed.
+        proposals = [
+            proposal
+            for proposal in proposals
+            if proposal.kind != "component" or proposal.score >= config.min_component_score
+        ]
     proposed = perf_counter()
 
     media_regions: list[MediaRegion] = []
