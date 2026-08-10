@@ -28,7 +28,7 @@ from resolver import (  # noqa: E402
     source_point,
     weak_control_proposals,
 )
-from visual_tap_demo import synthetic_command  # noqa: E402
+from visual_tap_demo import immersive_command, synthetic_command  # noqa: E402
 
 
 def _ref_full_rect_safe_point(h: int, w: int) -> tuple[int, int, float]:
@@ -231,6 +231,83 @@ class SyntheticIntegrationTests(unittest.TestCase):
                 self.assertTrue(
                     any(box_iou(tuple(block["sourceBBox"]), tuple(expected["bbox"])) > 0.45 for block in matches),
                     f"no sufficiently overlapping row block for {expected['id']}",
+                )
+
+    def test_every_hit_region_has_a_safe_block(self) -> None:
+        # C3 coverage gate: all 12 hit regions (top-1..3 / row-1..5 / tab-1..4)
+        # must each have a block whose sourceSafePoint is strictly inside the
+        # region bbox, and the covering block must carry the C2 kind that the
+        # region's semantics imply (top-* are icons, tab-* icons/buttons,
+        # row-* are layout rows). Do NOT soften this to match current behavior;
+        # a missing region is the bug C1/C2 were meant to fix.
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            synthetic_command(Namespace(output_dir=str(output)))
+            truth = json.loads((output / "ground-truth.json").read_text(encoding="utf-8"))
+            result = resolve_image(output / "screen.png", ResolverConfig(max_blocks=256))
+            blocks = result["blocks"]
+            allowed = {"top": {"icon", "component"}, "row": {"row"}, "tab": {"button", "icon", "component"}}
+            self.assertEqual(len(truth["hitRegions"]), 12)
+            for region in truth["hitRegions"]:
+                ex, ey, ew, eh = region["bbox"]
+                rid = region["id"]
+                matches = [
+                    block
+                    for block in blocks
+                    if ex <= block["sourceSafePoint"][0] < ex + ew
+                    and ey <= block["sourceSafePoint"][1] < ey + eh
+                ]
+                self.assertTrue(
+                    matches,
+                    f"no safe block covers {rid} (bbox {region['bbox']})",
+                )
+                self.assertTrue(
+                    any(block["kind"] in allowed[rid.split("-")[0]] for block in matches),
+                    f"{rid} covered only by unexpected kinds {sorted({b['kind'] for b in matches})}",
+                )
+
+    def test_immersive_media_suppression_caps_and_keeps_controls(self) -> None:
+        # C1/C3 immersive gate (douyin-256-cap proxy): the fixture must
+        # over-fragment at default settings, and half-res media + merge + score
+        # gating must cut the candidate set to <=40 while every named on-media
+        # control (back/search/follow/pause/mute/tab-1..4) keeps a safe block
+        # strictly inside its hit region.
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            immersive_command(Namespace(output_dir=str(output)))
+            truth = json.loads((output / "ground-truth.json").read_text(encoding="utf-8"))
+            screen = output / "screen.png"
+
+            flood = resolve_image(screen, ResolverConfig())
+            self.assertGreater(
+                len(flood["blocks"]),
+                100,
+                f"fixture no longer floods at default: {len(flood['blocks'])} blocks",
+            )
+
+            result = resolve_image(
+                screen,
+                ResolverConfig(
+                    media_detection_scale=0.5,
+                    media_merge_iou=0.5,
+                    min_component_score=0.55,
+                ),
+            )
+            blocks = result["blocks"]
+            self.assertLessEqual(
+                len(blocks),
+                40,
+                f"media gating did not cap the candidate set: {len(blocks)} blocks",
+            )
+            for region in truth["hitRegions"]:
+                ex, ey, ew, eh = region["bbox"]
+                self.assertTrue(
+                    any(
+                        ex <= block["sourceSafePoint"][0] < ex + ew
+                        and ey <= block["sourceSafePoint"][1] < ey + eh
+                        for block in blocks
+                    ),
+                    f"on-media control {region['id']} suppressed by media gating",
                 )
 
 
