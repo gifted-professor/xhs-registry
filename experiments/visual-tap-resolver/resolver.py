@@ -142,19 +142,26 @@ def box_center(box: tuple[int, int, int, int]) -> tuple[float, float]:
     return x + w / 2.0, y + h / 2.0
 
 
-def detect_media_regions(image: np.ndarray, config: ResolverConfig) -> list[MediaRegion]:
+def detect_media_regions(
+    image: np.ndarray, config: ResolverConfig, gray: np.ndarray | None = None
+) -> list[MediaRegion]:
     """Detect large contiguous photo/video areas.
 
     A media region is a big connected component whose interior is texture-rich
     (high edge density) and color-rich (non-trivial saturation), unlike flat UI
     surfaces. Single-frame heuristic; a second frame would make this far more
     reliable but is out of scope for the offline PoC.
+
+    ``gray`` is the pre-blurred 5x5 grayscale of ``image`` when supplied
+    (callers that already computed it avoid a duplicate full-image conversion);
+    otherwise it is computed here. Bit-identical either way.
     """
 
     height, width = image.shape[:2]
     image_area = width * height
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    if gray is None:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(gray, 40, 120)
     # Close texture into solid blobs, then fill holes so a photo becomes one region.
     # Kernel/iterations stay modest so the media blob does not bridge across the
@@ -181,14 +188,19 @@ def detect_media_regions(image: np.ndarray, config: ResolverConfig) -> list[Medi
         if w < width * 0.4 or h < height * 0.18:
             continue
         # Re-derive a tight bounding box from this component's own filled pixels
-        # so a rectangular bbox never swallows adjacent UI bars.
-        component = np.zeros((height, width), np.uint8)
-        cv2.drawContours(component, [contour], -1, 255, -1)
+        # so a rectangular bbox never swallows adjacent UI bars. Do it on a mask
+        # sized to the contour's own bbox (translated to the origin); translation
+        # is an isometry, so the resulting region is bit-identical to the old
+        # full-frame allocation minus a full-frame np.zeros + drawContours.
+        component = np.zeros((h, w), np.uint8)
+        shifted = (contour - np.array([x, y], dtype=np.int32)).astype(np.int32)
+        cv2.drawContours(component, [shifted], -1, 255, -1)
         inner, _ = cv2.findContours(component, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
         if not inner:
             continue
         largest = max(inner, key=cv2.contourArea)
-        tx, ty, tw, th = cv2.boundingRect(largest)
+        lx, ly, tw, th = cv2.boundingRect(largest)
+        tx, ty = x + lx, y + ly
         # Clip to the content band: even if the blob bridges into chrome, the
         # reported region must not extend over the status/top bars or bottom nav.
         ty = max(ty, top_ui_limit)
@@ -261,10 +273,12 @@ def is_media_card(proposal: Proposal, config: ResolverConfig, image_area: int) -
     return aspect <= 2.4
 
 
-def contour_proposals(image: np.ndarray, config: ResolverConfig) -> list[Proposal]:
+def contour_proposals(
+    image: np.ndarray, config: ResolverConfig, gray: np.ndarray | None = None
+) -> list[Proposal]:
     height, width = image.shape[:2]
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    if gray is None:
+        gray = cv2.GaussianBlur(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), (3, 3), 0)
     edges = cv2.Canny(gray, 48, 132)
     edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
     contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -293,19 +307,25 @@ def contour_proposals(image: np.ndarray, config: ResolverConfig) -> list[Proposa
     return proposals
 
 
-def weak_control_proposals(image: np.ndarray, config: ResolverConfig) -> list[Proposal]:
+def weak_control_proposals(
+    image: np.ndarray, config: ResolverConfig, gray: np.ndarray | None = None
+) -> list[Proposal]:
     """Propose low-contrast, text-free controls (toggles, hollow icons).
 
     The main Canny pass misses controls that are only a few gray levels away
     from the page background. This pass uses a low edge threshold plus tight
     size/shape gating so it recovers such controls without flooding the
     candidate set with text strokes or noise.
+
+    ``gray`` is the pre-blurred 3x3 grayscale of ``image`` when supplied
+    (callers that already computed it avoid a duplicate full-image conversion);
+    otherwise it is computed here. Bit-identical either way.
     """
 
     height, width = image.shape[:2]
     image_area = width * height
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    if gray is None:
+        gray = cv2.GaussianBlur(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), (3, 3), 0)
     edges = cv2.Canny(gray, 16, 48)
     edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -332,11 +352,19 @@ def weak_control_proposals(image: np.ndarray, config: ResolverConfig) -> list[Pr
     return proposals
 
 
-def row_band_proposals(image: np.ndarray) -> list[Proposal]:
-    """Propose wide list-row bands from strong horizontal boundaries."""
+def row_band_proposals(
+    image: np.ndarray, gray: np.ndarray | None = None
+) -> list[Proposal]:
+    """Propose wide list-row bands from strong horizontal boundaries.
+
+    ``gray`` is the unblurred grayscale of ``image`` when supplied (callers
+    that already computed it avoid a duplicate full-image conversion);
+    otherwise it is computed here. Bit-identical either way.
+    """
 
     height, width = image.shape[:2]
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    if gray is None:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     sobel_y = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3))
     profile = sobel_y[:, int(width * 0.04) : int(width * 0.96)].mean(axis=1)
     threshold = max(float(np.percentile(profile, 84)), float(profile.mean() + profile.std() * 0.8))
@@ -456,6 +484,15 @@ def overlapping_component(mask: np.ndarray, seed_rect: tuple[int, int, int, int]
     best_label = 0
     best_score = 0.0
     for label in range(1, count):
+        # A label's pixels are a subset of its stats bbox, so a bbox that does
+        # not intersect the seed rect provably has zero overlap. Skipping it
+        # avoids materializing the full-crop np.where for background labels.
+        left = int(stats[label, cv2.CC_STAT_LEFT])
+        top = int(stats[label, cv2.CC_STAT_TOP])
+        lw = int(stats[label, cv2.CC_STAT_WIDTH])
+        lh = int(stats[label, cv2.CC_STAT_HEIGHT])
+        if left + lw <= sx or left >= sx + sw or top + lh <= sy or top >= sy + sh:
+            continue
         component = np.where(labels == label, 255, 0).astype(np.uint8)
         overlap = cv2.countNonZero(cv2.bitwise_and(component, seed))
         area = int(stats[label, cv2.CC_STAT_AREA])
@@ -697,15 +734,22 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
     source_scales = (scale_x, scale_y)
     resized = perf_counter()
 
-    raw_proposals = contour_proposals(analysis, config) + row_band_proposals(analysis)
+    # One full-image grayscale conversion, shared by the three proposal passes
+    # and (if enabled) media detection. Bit-identical to each pass computing
+    # its own gray; blur kernels differ (3x3 vs 5x5) so they are prepared
+    # separately, the 5x5 only when media suppression actually runs.
+    raw_gray = cv2.cvtColor(analysis, cv2.COLOR_BGR2GRAY)
+    gray3 = cv2.GaussianBlur(raw_gray, (3, 3), 0)
+    raw_proposals = contour_proposals(analysis, config, gray3) + row_band_proposals(analysis, raw_gray)
     if config.weak_control_detection:
-        raw_proposals = raw_proposals + weak_control_proposals(analysis, config)
+        raw_proposals = raw_proposals + weak_control_proposals(analysis, config, gray3)
     proposals = deduplicate_proposals(raw_proposals, config.max_blocks)
     proposed = perf_counter()
 
     media_regions: list[MediaRegion] = []
     if config.media_suppression:
-        media_regions = detect_media_regions(analysis, config)
+        gray5 = cv2.GaussianBlur(raw_gray, (5, 5), 0)
+        media_regions = detect_media_regions(analysis, config, gray5)
         proposals = deduplicate_proposals(
             filter_proposals_by_media(
                 proposals, media_regions, config, analysis.shape[0] * analysis.shape[1]

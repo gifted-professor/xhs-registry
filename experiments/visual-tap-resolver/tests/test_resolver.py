@@ -17,6 +17,7 @@ from resolver import (  # noqa: E402
     ResolverConfig,
     box_iou,
     detect_media_regions,
+    overlapping_component,
     resize_for_analysis,
     resolve_image,
     safe_point,
@@ -145,6 +146,13 @@ class SyntheticIntegrationTests(unittest.TestCase):
         regions = detect_media_regions(image, ResolverConfig())
         self.assertTrue(regions, "no media region detected for a large photo")
         self.assertGreaterEqual(regions[0].area_ratio, 0.4)
+        # A2 guard: the region bbox must be tight to the photo's own pixels, not
+        # the full frame (bbox-scoped mask re-derivation must not swallow chrome).
+        # Photo is rows [110,370) = 260 tall; a swallowed full-frame region would
+        # be ~400 tall. Allow the blur-margin boundary pixels on each side.
+        bx, by, bw, bh = regions[0].bbox
+        self.assertGreaterEqual(bh, 230, f"media region collapsed below photo height, got {regions[0].bbox}")
+        self.assertLessEqual(bh, 270, f"media region swallowed the full frame, got {regions[0].bbox}")
 
     def test_every_list_row_has_a_safe_row_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -168,6 +176,22 @@ class SyntheticIntegrationTests(unittest.TestCase):
                     any(box_iou(tuple(block["sourceBBox"]), tuple(expected["bbox"])) > 0.45 for block in matches),
                     f"no sufficiently overlapping row block for {expected['id']}",
                 )
+
+
+class OverlappingComponentTests(unittest.TestCase):
+    def test_bbox_prefilter_selects_only_the_seed_overlapping_label(self) -> None:
+        # Two disconnected blobs: one inside the seed rect, one far outside.
+        # The bbox prefilter must skip the outside blob (zero overlap) and
+        # return exactly the inside one.
+        mask = np.zeros((60, 60), np.uint8)
+        cv2.rectangle(mask, (10, 10), (20, 20), 255, -1)  # inside seed
+        cv2.rectangle(mask, (45, 45), (55, 55), 255, -1)  # outside seed
+        seed = (8, 8, 15, 15)
+        out = overlapping_component(mask, seed)
+        self.assertIsNotNone(out, "expected a component overlapping the seed rect")
+        ys, xs = np.where(out > 0)
+        self.assertTrue((xs >= 10).all() and (xs <= 20).all(), f"returned pixels outside inside-blob x: {xs.tolist()}")
+        self.assertTrue((ys >= 10).all() and (ys <= 20).all(), f"returned pixels outside inside-blob y: {ys.tolist()}")
 
 
 if __name__ == "__main__":
