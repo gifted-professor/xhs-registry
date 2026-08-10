@@ -387,6 +387,45 @@ def is_media_card(proposal: Proposal, config: ResolverConfig, image_area: int) -
     return aspect <= 2.4
 
 
+def classify_kind(
+    *,
+    w: int,
+    h: int,
+    area: int,
+    aspect: float,
+    fill: float,
+    compactness: float,
+    image_height: int,
+    image_area: int,
+    taxonomy: bool,
+) -> str:
+    """Label a contour candidate with a UI kind (row/card/icon/button/component).
+
+    The ``row`` rule is bit-identical to the historical decision in
+    ``contour_proposals`` and runs first, so layout rows never change kind.
+    When ``taxonomy`` is disabled every non-row candidate collapses back to
+    ``component`` exactly as before the refinement (the ``--no-kind-taxonomy``
+    A/B switch).
+
+    ``aspect`` is the signed ``w / max(1, h)`` used by the row rule (>=1 for a
+    wide band); the card geometry instead mirrors ``is_media_card`` and uses
+    ``max(w, h) / max(1, min(w, h))`` so a portrait card passes ``<= 2.4``.
+    """
+
+    if aspect >= 3.2 and image_height * 0.035 <= h <= image_height * 0.20:
+        return "row"
+    if not taxonomy:
+        return "component"
+    abs_aspect = max(w, h) / max(1, min(w, h))
+    if area >= image_area * 0.02 and abs_aspect <= 2.4 and compactness >= 0.45:
+        return "card"
+    if area <= image_area * 0.004 and 0.8 <= aspect <= 1.4 and fill >= 0.5 and compactness >= 0.55:
+        return "icon"
+    if image_area * 0.004 < area < image_area * 0.02 and 1.4 < aspect < 3.2 and compactness >= 0.4:
+        return "button"
+    return "component"
+
+
 def contour_proposals(
     image: np.ndarray, config: ResolverConfig, gray: np.ndarray | None = None
 ) -> list[Proposal]:
@@ -415,7 +454,17 @@ def contour_proposals(
         size_signal = min(1.0, area / max(1, image_area * 0.015))
         score = 0.32 + fill * 0.28 + compactness * 0.20 + size_signal * 0.20
         aspect = w / max(1, h)
-        kind = "row" if aspect >= 3.2 and height * 0.035 <= h <= height * 0.20 else "component"
+        kind = classify_kind(
+            w=w,
+            h=h,
+            area=area,
+            aspect=aspect,
+            fill=fill,
+            compactness=compactness,
+            image_height=height,
+            image_area=image_area,
+            taxonomy=config.kind_taxonomy,
+        )
         proposals.append(Proposal(kind, (x, y, w, h), round(float(score), 4)))
 
     return proposals
@@ -1076,6 +1125,9 @@ def render_overlay(source: np.ndarray, blocks: list[dict[str, Any]]) -> np.ndarr
     palette = {
         "component": (35, 210, 70),
         "row": (255, 170, 30),
+        "card": (210, 120, 255),
+        "icon": (255, 60, 200),
+        "button": (60, 170, 255),
     }
     for block in blocks:
         x, y, w, h = block["sourceBBox"]

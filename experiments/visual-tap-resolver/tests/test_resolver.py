@@ -17,6 +17,7 @@ from resolver import (  # noqa: E402
     Proposal,
     ResolverConfig,
     box_iou,
+    classify_kind,
     detect_media_regions,
     overlapping_component,
     refine_component,
@@ -308,6 +309,78 @@ class ResolverConfigTests(unittest.TestCase):
             "kind_taxonomy",
         ):
             self.assertEqual(getattr(config, field), getattr(defaults, field), field)
+
+
+class ClassifyKindTests(unittest.TestCase):
+    """C2 additive icon/button/card semantics; the row rule is bit-identical and
+    taxonomy=False collapses every non-row candidate back to component."""
+
+    IMAGE_AREA = 1_000_000  # e.g. a 1000x1000 analysis frame
+
+    def _kind(
+        self,
+        w: int,
+        h: int,
+        *,
+        fill: float,
+        compactness: float,
+        taxonomy: bool = True,
+    ) -> str:
+        return classify_kind(
+            w=w,
+            h=h,
+            area=w * h,
+            aspect=w / max(1, h),
+            fill=fill,
+            compactness=compactness,
+            image_height=1000,
+            image_area=self.IMAGE_AREA,
+            taxonomy=taxonomy,
+        )
+
+    def test_row_rule_unchanged(self) -> None:
+        # A wide 40px-tall band on a 1000px frame is a layout row.
+        self.assertEqual(self._kind(320, 40, fill=0.9, compactness=0.8), "row")
+        # Aspect that is not row-wide (near-square) but large and ragged does not
+        # qualify as card (compactness too low) or button (not wide) -> component.
+        self.assertEqual(self._kind(320, 300, fill=0.9, compactness=0.3), "component")
+
+    def test_card_is_large_compact_block(self) -> None:
+        # 3% of frame, near-square, high compactness -> card.
+        self.assertEqual(self._kind(200, 150, fill=0.9, compactness=0.6), "card")
+        # A thin streak below the row height band (30px) is neither card nor
+        # button (extreme aspect) -> component.
+        self.assertEqual(self._kind(500, 30, fill=0.9, compactness=0.2), "component")
+
+    def test_icon_is_small_square_glyph(self) -> None:
+        # 0.3% of frame, square, high fill+compactness -> icon.
+        self.assertEqual(self._kind(55, 55, fill=0.7, compactness=0.7), "icon")
+        # Small and square but ragged (low compactness) -> component.
+        self.assertEqual(self._kind(55, 55, fill=0.7, compactness=0.4), "component")
+
+    def test_button_is_mid_sized_wide_fill(self) -> None:
+        # 0.6% of frame, 2.4:1, solid -> button (a follow-style pill).
+        self.assertEqual(self._kind(120, 50, fill=0.9, compactness=0.5), "button")
+        # Mid-sized but near-square -> not a button, not an icon -> component.
+        self.assertEqual(self._kind(80, 75, fill=0.9, compactness=0.5), "component")
+
+    def test_taxonomy_off_collapses_to_component(self) -> None:
+        # The same candidates that are card/icon/button revert to component.
+        for w, h, fill, compactness in (
+            (200, 150, 0.9, 0.6),
+            (55, 55, 0.7, 0.7),
+            (120, 50, 0.9, 0.5),
+        ):
+            self.assertEqual(
+                self._kind(w, h, fill=fill, compactness=compactness, taxonomy=False),
+                "component",
+            )
+
+    def test_row_survives_taxonomy_off(self) -> None:
+        # Rows are structural and never collapse.
+        self.assertEqual(
+            self._kind(320, 40, fill=0.9, compactness=0.8, taxonomy=False), "row"
+        )
 
 
 class SkipCompactGrabCutTests(unittest.TestCase):
