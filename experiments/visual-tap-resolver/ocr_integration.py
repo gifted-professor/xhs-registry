@@ -9,11 +9,23 @@ points still come from the resolver's own geometry.
 
 Targets PaddleOCR 3.x (``PaddleOCR.predict`` -> ``rec_boxes``/``rec_texts``/
 ``rec_scores``). The dependency is optional; the resolver works without it.
+
+oneDNN/MKL-DNN on some CPUs (i3-12100 here) crashes the OCR process, so it is
+disabled before any PaddleOCR import — same recipe as the known-good
+``scripts/lib/wechat-balance-ocr.py`` in the parent registry repo. Without
+these env vars set first, PaddleOCR's native init picks up oneDNN and dies.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
+
+# Must run before ``from paddleocr import PaddleOCR``: they gate the native
+# oneDNN backend at Paddle's C++ init. setdefault so a caller-provided override
+# (e.g. a working mkldnn build) still wins.
+os.environ.setdefault("FLAGS_use_mkldnn", "0")
+os.environ.setdefault("PADDLE_PDX_DISABLE_MKLDNN", "1")
 
 import numpy as np
 
@@ -38,6 +50,8 @@ class OcrEngine:
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
+            enable_mkldnn=False,
+            cpu_threads=os.cpu_count(),
         )
 
     def detect(self, image: np.ndarray) -> list[TextBox]:
