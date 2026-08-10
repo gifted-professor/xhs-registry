@@ -35,6 +35,7 @@
 `b520d1b16ec379f4289fa33426a184a8fa6fe65d`；定向 13/13、`npm run check`、
 `git diff --check` 通过。`.codex` / `.agents` 两份 xw Skill SHA256 均为
 `46ce5ca33bd999bd4ae70516a61d98ad523ffc0a9b0db19d0d45dc59865059c7`。
+源码已推送，Draft PR：`gifted-professor/xhs-registry#8`。
 
 ## 2026-08-08 Foundation PR2 wiring closure（post-merge hotfix）
 
