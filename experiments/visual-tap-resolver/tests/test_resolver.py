@@ -117,6 +117,18 @@ class DeterminismTests(unittest.TestCase):
             self.assertEqual(first["blocks"], second["blocks"])
             self.assertEqual(first["rootBlockIds"], second["rootBlockIds"])
 
+    def test_parallel_refine_matches_serial(self) -> None:
+        # A4 guard: the thread pool must produce byte-identical blocks to the
+        # serial path. ``test_full_block_result_is_deterministic`` compares two
+        # same-mode runs; this one proves parallel == serial across modes.
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            synthetic_command(Namespace(output_dir=str(output)))
+            serial = resolve_image(output / "screen.png", refine_workers=1)
+            parallel = resolve_image(output / "screen.png", refine_workers=4)
+            self.assertEqual(serial["blocks"], parallel["blocks"])
+            self.assertEqual(serial["rootBlockIds"], parallel["rootBlockIds"])
+
     def test_resolve_does_not_mutate_source_or_analysis(self) -> None:
         # The synthetic frame is 540x1200 under max_side=1280, so analysis IS
         # source after A5 (no copy). If any resolver stage mutates the analysis

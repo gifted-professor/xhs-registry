@@ -6,6 +6,8 @@ image SHA and are suitable only for overlay/dry-run evaluation.
 
 from __future__ import annotations
 
+import concurrent.futures
+import os
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from math import ceil, floor
@@ -726,8 +728,54 @@ def find_blocks_by_text(result: dict[str, Any], query: str) -> list[dict[str, An
     return matches
 
 
-def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str, Any]:
+def _refine_components(
+    image: np.ndarray,
+    proposals: list[Proposal],
+    config: ResolverConfig,
+    workers: int,
+) -> list[tuple[np.ndarray, tuple[int, int, int, int], str]]:
+    """Refine every proposal, running ``workers`` GrabCuts concurrently.
+
+    Output is byte-identical to the serial path: concurrent ``grabCut`` with a
+    per-call ``cv2.setRNGSeed(0)`` is deterministic (the C++ RNG is thread-safe
+    for this usage), and ``grabCut`` output is independent of OpenCV's internal
+    thread count. ``cv2.setNumThreads`` is process-global in the Python binding,
+    so the internal thread count is throttled to 1 on the caller thread for the
+    duration of the pool (the pool is then the only parallelism) and restored in
+    ``finally`` — no thread-count leak into later serial phases.
+
+    Any worker failure degrades to the serial path rather than aborting the
+    resolve. ``workers <= 1`` (or a single proposal) skips pool overhead.
+    """
+
+    if workers <= 1 or len(proposals) <= 1:
+        return [refine_component(image, proposal, config) for proposal in proposals]
+    previous_threads = cv2.getNumThreads()
+    cv2.setNumThreads(1)
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(refine_component, image, proposal, config) for proposal in proposals]
+            try:
+                # Harvest in submission order; order is structural, not
+                # timing-dependent.
+                return [future.result() for future in futures]
+            except Exception:
+                return [refine_component(image, proposal, config) for proposal in proposals]
+    finally:
+        cv2.setNumThreads(previous_threads)
+
+
+def resolve_image(
+    path: Path,
+    config: ResolverConfig | None = None,
+    *,
+    refine_workers: int | None = None,
+) -> dict[str, Any]:
     config = config or ResolverConfig()
+    # ``refine_workers`` is a keyword argument, deliberately NOT a
+    # ``ResolverConfig`` field: the config dict is part of the manifest basis,
+    # so a concurrency knob must never change the manifest.
+    workers = os.cpu_count() if refine_workers is None else refine_workers
     started = perf_counter()
     source, source_sha = decode_source_image(path)
     decoded = perf_counter()
@@ -785,8 +833,8 @@ def resolve_image(path: Path, config: ResolverConfig | None = None) -> dict[str,
     blocks: list[dict[str, Any]] = []
     masks: dict[str, tuple[np.ndarray, tuple[int, int, int, int]]] = {}
 
-    for proposal in proposals:
-        mask, mask_box, method = refine_component(analysis, proposal, config)
+    refined_items = _refine_components(analysis, proposals, config, workers)
+    for proposal, (mask, mask_box, method) in zip(proposals, refined_items):
         px, py, clearance = safe_point(mask, mask_box)
         block = {
             "kind": proposal.kind,
