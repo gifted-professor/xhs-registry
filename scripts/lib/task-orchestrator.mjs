@@ -133,7 +133,10 @@ function requireSchedulerConstraints(executionPlan) {
   };
 }
 
-function buildAssignment({ taskRunId, plan, executionPlan, unit, alias, workerId, attemptIndex, attemptId }) {
+function buildAssignment({ taskRunId, plan, executionPlan, unit, alias, device = null, workerId, attemptIndex, attemptId }) {
+  const physicalLabel = typeof device?.physicalLabel === "string" && device.physicalLabel.trim()
+    ? device.physicalLabel.trim()
+    : null;
   return {
     taskRunId,
     planHash: plan.planHash,
@@ -146,6 +149,7 @@ function buildAssignment({ taskRunId, plan, executionPlan, unit, alias, workerId
     implementationClosureHash: unit.boundNode.implementationClosureHash || null,
     operationKey: `m2:${taskRunId}:${unit.shard.shardKey}`,
     alias,
+    ...(physicalLabel ? { physicalLabel } : {}),
     workerId,
     attemptIndex,
     attemptId,
@@ -383,6 +387,7 @@ export async function runTaskOrchestrator({
           executionPlan,
           unit,
           alias,
+          device,
           workerId,
           attemptIndex,
           attemptId: `attempt_${unit.shard.shardKey.slice(0, 16)}_${attemptIndex}_${randomUUID().slice(0, 8)}`,

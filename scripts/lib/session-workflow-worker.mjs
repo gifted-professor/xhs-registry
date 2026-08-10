@@ -1,10 +1,17 @@
 import { getWorkflow } from "./workflow-catalog.mjs";
 import { createWorkReceipt } from "./work-receipt.mjs";
-import { validateExpectedApp } from "./typed-job-worker.mjs";
+import { assignmentPlacement, validateExpectedApp } from "./typed-job-worker.mjs";
 import { extractWechatBalanceFromScreen } from "./wechat-balance-extract.mjs";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function errorInfo(error, fallbackCode) {
+  return {
+    code: error?.code || fallbackCode,
+    message: error?.message || String(error),
+  };
 }
 
 /**
@@ -140,6 +147,8 @@ export class SessionWorkflowWorker {
     actorId,
     workflowResolver = getWorkflow,
     pollMs = 0,
+    heartbeatMs = 20_000,
+    transportLane = null,
   } = {}) {
     if (!client) throw new Error("client is required");
     if (!actorId) throw new Error("actorId is required");
@@ -147,6 +156,10 @@ export class SessionWorkflowWorker {
     this.actorId = actorId;
     this.workflowResolver = workflowResolver;
     this.pollMs = pollMs;
+    this.heartbeatMs = heartbeatMs;
+    // A lane may be shared by many workers.  ControlPlaneHttpClient also
+    // accepts the same lane; avoid wrapping twice when it owns the lane.
+    this.transportLane = transportLane || client.transportLane || null;
   }
 
   resolveWorkflow(executor) {
@@ -169,32 +182,104 @@ export class SessionWorkflowWorker {
     return workflow;
   }
 
+  runTransport(operation, metadata = {}) {
+    if (!this.transportLane || this.client.transportLane === this.transportLane) return operation();
+    return this.transportLane.run(operation, metadata);
+  }
+
+  startKeepalive(session, assignment) {
+    if (typeof this.client.heartbeatSession !== "function" || !(this.heartbeatMs > 0)) return null;
+
+    let stopped = false;
+    let inFlight = null;
+    let heartbeatError = null;
+    const beat = async () => {
+      if (stopped) return null;
+      if (inFlight) return inFlight;
+      const request = this.runTransport(
+        () => this.client.heartbeatSession({
+          sessionId: session.sessionId,
+          token: session.token,
+          alias: assignment.alias,
+          physicalLabel: assignmentPlacement(assignment).physicalLabel,
+        }),
+        { type: "session_heartbeat", alias: assignment.alias, sessionId: session.sessionId },
+      );
+      inFlight = Promise.resolve(request)
+        .catch((error) => {
+          heartbeatError = errorInfo(error, "SESSION_HEARTBEAT_FAILED");
+          throw Object.assign(new Error(heartbeatError.message), { code: heartbeatError.code, cause: error });
+        })
+        .finally(() => {
+          inFlight = null;
+        });
+      return inFlight;
+    };
+    const timer = setInterval(() => {
+      void beat().catch(() => {});
+    }, this.heartbeatMs);
+    timer.unref?.();
+
+    return {
+      beat,
+      get error() {
+        return heartbeatError;
+      },
+      async stop() {
+        if (stopped) return;
+        stopped = true;
+        clearInterval(timer);
+        if (inFlight) await inFlight.catch(() => {});
+      },
+    };
+  }
+
   async execute(assignment) {
     const startedAt = new Date().toISOString();
     const executor = assignment.node.executor;
     let session = null;
+    let keepalive = null;
     let released = false;
     let releaseError = null;
+    let cleanupPromise = null;
     const release = async () => {
       if (!session || released) return;
       released = true;
       try {
-        await this.client.releaseSession({
-          sessionId: session.sessionId,
-          token: session.token,
-          alias: assignment.alias,
-        });
+        await this.runTransport(
+          () => this.client.releaseSession({
+            sessionId: session.sessionId,
+            token: session.token,
+            alias: assignment.alias,
+            physicalLabel: assignmentPlacement(assignment).physicalLabel,
+          }),
+          { type: "session_release", alias: assignment.alias, sessionId: session.sessionId },
+        );
         if (typeof this.client.assertLeaseAbsent === "function") {
-          await this.client.assertLeaseAbsent(session.leaseId);
+          await this.runTransport(
+            () => this.client.assertLeaseAbsent(session.leaseId),
+            { type: "lease_absent_check", alias: assignment.alias, leaseId: session.leaseId },
+          );
         } else if (typeof this.client.getLeases === "function") {
-          const payload = await this.client.getLeases();
+          const payload = await this.runTransport(
+            () => this.client.getLeases(),
+            { type: "lease_absent_check", alias: assignment.alias, leaseId: session.leaseId },
+          );
           const still = (payload?.leases || []).some((item) => item.leaseId === session.leaseId);
           if (still) throw Object.assign(new Error(`lease ${session.leaseId} still visible after release`), { code: "LEASE_STILL_VISIBLE" });
         }
       } catch (error) {
         // finally path must not mask the primary business/technical outcome, but must not claim success.
-        releaseError = { code: error?.code || "SESSION_RELEASE_FAILED", message: error?.message || String(error) };
+        releaseError = errorInfo(error, "SESSION_RELEASE_FAILED");
       }
+    };
+    const cleanup = async () => {
+      if (cleanupPromise) return cleanupPromise;
+      cleanupPromise = (async () => {
+        if (keepalive) await keepalive.stop();
+        await release();
+      })();
+      return cleanupPromise;
     };
 
     try {
@@ -206,23 +291,48 @@ export class SessionWorkflowWorker {
         // Catalog may declare future canary taps; production path still fail-closed without explicit permit.
       }
 
-      session = await this.client.acquireSession({
-        actorId: this.actorId,
-        capabilityId: executor.capabilityId,
-        alias: assignment.alias,
-        canary: workflow.maturity === "canary_only" || workflow.status === "canary_only",
-        workflowId: workflow.workflowId,
-      });
+      session = await this.runTransport(
+        () => this.client.acquireSession({
+          actorId: this.actorId,
+          capabilityId: executor.capabilityId,
+          alias: assignment.alias,
+          physicalLabel: assignmentPlacement(assignment).physicalLabel,
+          canary: workflow.maturity === "canary_only" || workflow.status === "canary_only",
+          workflowId: workflow.workflowId,
+        }),
+        { type: "session_acquire", alias: assignment.alias, workflowId: workflow.workflowId },
+      );
       if (!session?.sessionId || !session?.leaseId || !session?.token) {
         throw Object.assign(new Error("session acquire did not return sessionId/leaseId/token"), { code: "SESSION_BINDING_INVALID" });
       }
       if (session.alias && session.alias !== assignment.alias) {
         throw Object.assign(new Error(`session bound to ${session.alias}, expected ${assignment.alias}`), { code: "PLACEMENT_MISMATCH" });
       }
+      const expectedPhysicalLabel = assignmentPlacement(assignment).physicalLabel;
+      if (expectedPhysicalLabel && session.physicalLabel && session.physicalLabel !== expectedPhysicalLabel) {
+        throw Object.assign(
+          new Error(`session bound to ${session.physicalLabel}, expected ${expectedPhysicalLabel}`),
+          { code: "PLACEMENT_MISMATCH" },
+        );
+      }
       if (typeof this.client.assertLeaseVisible === "function") {
-        await this.client.assertLeaseVisible(session.leaseId, {
+        await this.runTransport(
+          () => this.client.assertLeaseVisible(session.leaseId, {
+            alias: assignment.alias,
+            actorId: this.actorId,
+          }),
+          { type: "lease_visible_check", alias: assignment.alias, leaseId: session.leaseId },
+        );
+      }
+
+      keepalive = this.startKeepalive(session, assignment);
+      if (keepalive) {
+        await keepalive.beat();
+        await assignment.onProgress?.({
+          type: "session_heartbeat",
+          sessionId: session.sessionId,
+          leaseId: session.leaseId,
           alias: assignment.alias,
-          actorId: this.actorId,
         });
       }
 
@@ -239,6 +349,9 @@ export class SessionWorkflowWorker {
       let lastOutput = {};
       for (const [actionIndex, action] of actions.entries()) {
         if (this.pollMs) await sleep(this.pollMs);
+        if (keepalive?.error) {
+          throw Object.assign(new Error(keepalive.error.message), { code: keepalive.error.code });
+        }
         const actionId = action.actionId || `action_${actionIndex}`;
         const primitive = action.primitive;
         if (!primitive) {
@@ -256,18 +369,22 @@ export class SessionWorkflowWorker {
           actionIndex,
           actionId,
         });
-        const result = await this.client.sessionAction({
-          sessionId: session.sessionId,
-          token: session.token,
-          alias: assignment.alias,
-          capabilityId: executor.capabilityId,
-          idempotencyKey,
-          params: {
-            primitive,
-            ...(action.params && typeof action.params === "object" ? action.params : {}),
-            // INV-07: no actionOverrides merge
-          },
-        });
+        const result = await this.runTransport(
+          () => this.client.sessionAction({
+            sessionId: session.sessionId,
+            token: session.token,
+            alias: assignment.alias,
+            physicalLabel: assignmentPlacement(assignment).physicalLabel,
+            capabilityId: executor.capabilityId,
+            idempotencyKey,
+            params: {
+              primitive,
+              ...(action.params && typeof action.params === "object" ? action.params : {}),
+              // INV-07: no actionOverrides merge
+            },
+          }),
+          { type: "session_action", alias: assignment.alias, sessionId: session.sessionId, actionId },
+        );
         const jobId = result?.jobId || result?.job?.jobId || null;
         const runId = result?.runId || result?.job?.runId || null;
         const output = result?.output || result?.job?.result?.output || {};
@@ -306,7 +423,7 @@ export class SessionWorkflowWorker {
 
       // Release session ASAP after device I/O. OCR/post-processing is offline and must not
       // hold a 60s canary lease (long extract previously left residual leases).
-      await release();
+      await cleanup();
 
       const merged = { ...lastOutput };
       // WeChat Services page: dump is often empty; balance is under 钱包 on screenshot.
@@ -375,6 +492,20 @@ export class SessionWorkflowWorker {
         releaseError,
       };
 
+      if (keepalive?.error) {
+        return createWorkReceipt({
+          assignment,
+          technicalStatus: "failed",
+          businessStatus: "not_evaluated",
+          retryable: true,
+          job: { jobId: actionRefs.at(-1)?.jobId, runId: actionRefs.at(-1)?.runId },
+          output: { ...output, paymentTransport: 0, finalCommit: false },
+          error: keepalive.error,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+        });
+      }
+
       // Prefer expectedApp.package from workflow catalog over packageName-only validator.
       const expectedForValidate = expectedApp
         ? {
@@ -427,7 +558,7 @@ export class SessionWorkflowWorker {
         finishedAt: new Date().toISOString(),
       });
     } catch (error) {
-      await release();
+      await cleanup();
       const code = error?.code || "SESSION_WORKFLOW_FAILED";
       const replaySafe = ["read_only", "replay_safe"].includes(executor?.replaySafety);
       const stop = /CAPTCHA|RISK|LOGIN|TAP_NOT_AUTHORIZED|PAYMENT|FINAL_COMMIT|PLACEMENT|CAPABILITY|WORKFLOW/i.test(code);
@@ -451,6 +582,10 @@ export class SessionWorkflowWorker {
         startedAt,
         finishedAt: new Date().toISOString(),
       });
+    } finally {
+      // cleanup() is idempotent so this remains safe after the success/error
+      // paths above and covers failures during validation or post-processing.
+      await cleanup();
     }
   }
 }

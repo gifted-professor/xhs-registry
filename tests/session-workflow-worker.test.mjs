@@ -20,30 +20,47 @@ import {
   assertExplorerSessionIdentity,
   explorerSessionIdentity,
 } from "../ops/_explore-lease.mjs";
+import { SingleFlightArbiter } from "../scripts/lib/typed-job-worker.mjs";
 
-function fakeSessionClient({ balancesByAlias = {}, failReleaseAlias = null } = {}) {
+function fakeSessionClient({ balancesByAlias = {}, failReleaseAlias = null, heartbeatError = null } = {}) {
   const sessions = new Map();
   const leases = new Map();
+  const acquireCalls = [];
+  const heartbeatCalls = [];
+  const actionCalls = [];
+  const releaseCalls = [];
   let seq = 0;
   return {
     sessions,
     leases,
-    async acquireSession({ actorId, alias, capabilityId }) {
+    acquireCalls,
+    heartbeatCalls,
+    actionCalls,
+    releaseCalls,
+    async acquireSession({ actorId, alias, physicalLabel, capabilityId }) {
+      acquireCalls.push({ actorId, alias, physicalLabel, capabilityId });
       seq += 1;
       const sessionId = `sess_${alias}_${seq}`;
       const leaseId = `lease_${alias}_${seq}`;
       const token = `tok_${alias}_${seq}`;
       sessions.set(sessionId, { alias, actorId, capabilityId, token, leaseId });
       leases.set(leaseId, { leaseId, holderId: actorId, alias, kind: "interactive" });
-      return { sessionId, leaseId, token, alias, deviceId: `dev_${alias}` };
+      return { sessionId, leaseId, token, alias, physicalLabel, deviceId: `dev_${alias}` };
     },
     async assertLeaseVisible(leaseId) {
       if (!leases.has(leaseId)) throw Object.assign(new Error("not visible"), { code: "EXPLORER_LEASE_NOT_VISIBLE" });
       return leases.get(leaseId);
     },
+    async heartbeatSession({ sessionId, token, alias, physicalLabel }) {
+      heartbeatCalls.push({ sessionId, token, alias, physicalLabel });
+      if (heartbeatError) throw heartbeatError;
+      if (!sessions.has(sessionId)) throw Object.assign(new Error("bad heartbeat"), { code: "SESSION_INVALID" });
+      return { sessionId, leaseId: sessions.get(sessionId).leaseId };
+    },
     async sessionAction({ sessionId, token, alias, params, idempotencyKey }) {
       const session = sessions.get(sessionId);
       if (!session || session.token !== token) throw Object.assign(new Error("bad session"), { code: "SESSION_INVALID" });
+      actionCalls.push({ sessionId, alias, params, idempotencyKey });
       seq += 1;
       const amount = balancesByAlias[alias];
       const output = {
@@ -71,6 +88,7 @@ function fakeSessionClient({ balancesByAlias = {}, failReleaseAlias = null } = {
       };
     },
     async releaseSession({ sessionId, token }) {
+      releaseCalls.push({ sessionId, token });
       const session = sessions.get(sessionId);
       if (!session || session.token !== token) throw Object.assign(new Error("bad release"), { code: "SESSION_INVALID" });
       if (failReleaseAlias && session.alias === failReleaseAlias) {
@@ -176,6 +194,76 @@ test("SessionWorkflowWorker JIT acquires, runs actions, releases, and accepts ba
   assert.equal(client.sessions.size, 0);
   assert.equal(client.leases.size, 0);
   assert.equal(receipt.output.actions.length, workflow.actions.length);
+});
+
+test("SessionWorkflowWorker forwards physicalLabel and keeps the session alive", async () => {
+  const client = fakeSessionClient({ balancesByAlias: { "01": "88.00" } });
+  const progress = [];
+  const worker = new SessionWorkflowWorker({ client, actorId: "fixture-actor", heartbeatMs: 5 });
+  const workflow = getWorkflow("workflow.wechat.balance-read.v1");
+  const node = compileWorkflowNodeAuthoring(workflow, { aliases: ["01"], nodeId: "heartbeat" });
+  const plan = createTaskPlanV2({ goal: "heartbeat", requestKey: "sw-heartbeat", nodes: [node] });
+  const receipt = await worker.execute({
+    taskRunId: "run_sw_heartbeat",
+    planHash: plan.planHash,
+    node: plan.nodes[0],
+    shard: plan.nodes[0].shards[0],
+    attemptId: "att_heartbeat",
+    attemptIndex: 0,
+    workerId: "w-heartbeat",
+    alias: "01",
+    physicalLabel: "rack-01",
+    onProgress: (event) => progress.push(event),
+  });
+  assert.equal(receipt.businessStatus, "accepted");
+  assert.equal(client.acquireCalls[0].physicalLabel, "rack-01");
+  assert.ok(client.heartbeatCalls.length >= 1);
+  assert.ok(client.heartbeatCalls.every((call) => call.physicalLabel === "rack-01"));
+  assert.ok(progress.some((event) => event.type === "session_heartbeat"));
+  assert.equal(client.sessions.size, 0);
+  assert.equal(client.leases.size, 0);
+});
+
+test("SessionWorkflowWorker fails closed on heartbeat failure and still releases", async () => {
+  const client = fakeSessionClient({
+    heartbeatError: new Error("heartbeat unavailable"),
+  });
+  const worker = new SessionWorkflowWorker({ client, actorId: "fixture-actor", heartbeatMs: 5 });
+  const workflow = getWorkflow("workflow.wechat.balance-read.v1");
+  const node = compileWorkflowNodeAuthoring(workflow, { aliases: ["01"], nodeId: "heartbeat-fail" });
+  const plan = createTaskPlanV2({ goal: "heartbeat failure", requestKey: "sw-heartbeat-fail", nodes: [node] });
+  const receipt = await worker.execute({
+    taskRunId: "run_sw_heartbeat_fail",
+    planHash: plan.planHash,
+    node: plan.nodes[0],
+    shard: plan.nodes[0].shards[0],
+    attemptId: "att_heartbeat_fail",
+    attemptIndex: 0,
+    workerId: "w-heartbeat-fail",
+    alias: "01",
+  });
+  assert.equal(receipt.technicalStatus, "failed");
+  assert.equal(receipt.error.code, "SESSION_HEARTBEAT_FAILED");
+  assert.equal(client.actionCalls.length, 0);
+  assert.equal(client.sessions.size, 0);
+  assert.equal(client.leases.size, 0);
+});
+
+test("SingleFlightArbiter serializes shared transport work fairly", async () => {
+  const lane = new SingleFlightArbiter({ name: "fixture-transport" });
+  let active = 0;
+  let maxActive = 0;
+  const order = [];
+  await Promise.all([1, 2, 3, 4].map((index) => lane.run(async () => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    order.push(index);
+    active -= 1;
+  })));
+  assert.equal(maxActive, 1);
+  assert.deepEqual(order, [1, 2, 3, 4]);
+  assert.equal(lane.pending, 0);
 });
 
 test("SessionWorkflowWorker always releases on failure and blocks unauthorized tap", async () => {
