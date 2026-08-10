@@ -235,13 +235,32 @@ export async function acquireExplorerSession({
     throw leaseError("EXPLORER_DEVICE_NOT_READY", `alias ${requestedAlias} is not ready`, 423);
   }
 
+  // pilotOnly #pilotPlacement pins the first pilot alias via physicalLabel when the
+  // request only has alias; include matching physicalLabel so multi-device fan-out works.
+  let physicalLabel = typeof device.physicalLabel === "string" && device.physicalLabel.trim()
+    ? device.physicalLabel.trim()
+    : null;
+  if (!physicalLabel) {
+    try {
+      const devicesPayload = await requestJson(`${control}/control/v1/devices`, { fetchImpl });
+      const live = (devicesPayload.devices || []).find((item) => item.alias === requestedAlias);
+      if (typeof live?.physicalLabel === "string" && live.physicalLabel.trim()) {
+        physicalLabel = live.physicalLabel.trim();
+      }
+    } catch {
+      // fall through — alias-only placement still works outside pilot rewrite conflicts
+    }
+  }
+  const placement = physicalLabel
+    ? { alias: requestedAlias, physicalLabel }
+    : { alias: requestedAlias };
   const payload = await requestJson(`${control}/control/v1/sessions`, {
     method: "POST",
     body: {
       actorId,
       capabilityId: EXPLORER_CAPABILITY_ID,
       canary: true,
-      placement: { alias: requestedAlias },
+      placement,
     },
     fetchImpl,
   });

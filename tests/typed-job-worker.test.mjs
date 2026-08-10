@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createTaskPlanV2 } from "../scripts/lib/task-plan-v2.mjs";
-import { TypedJobWorker, validateBusinessOutput, validateExpectedApp } from "../scripts/lib/typed-job-worker.mjs";
+import {
+  ControlPlaneHttpClient,
+  SingleFlightArbiter,
+  TypedJobWorker,
+  validateBusinessOutput,
+  validateExpectedApp,
+} from "../scripts/lib/typed-job-worker.mjs";
 
-function assignment({ acceptance, expectedApp } = {}) {
+function assignment({ acceptance, expectedApp, physicalLabel } = {}) {
   const plan = createTaskPlanV2({
     goal: "worker fixture",
     requestKey: "worker-fixture",
@@ -31,6 +37,7 @@ function assignment({ acceptance, expectedApp } = {}) {
     workerId: "worker-1",
     attemptIndex: 0,
     attemptId: "attempt_fixture_0",
+    ...(physicalLabel ? { physicalLabel } : {}),
   };
 }
 
@@ -123,14 +130,68 @@ test("typed-job worker routes, submits, polls and business-validates", async () 
     },
   };
   const worker = new TypedJobWorker({ client: safeClient(client), actorId: "fixture", pollMs: 0 });
-  const next = assignment({ acceptance: { minItems: 1, requiredFields: ["postIdentity", "title", "author"] } });
+  const next = assignment({
+    acceptance: { minItems: 1, requiredFields: ["postIdentity", "title", "author"] },
+    physicalLabel: "rack-02",
+  });
   const receipt = await worker.execute(next);
   assert.equal(receipt.technicalStatus, "succeeded");
   assert.equal(receipt.businessStatus, "accepted");
   assert.equal(receipt.alias, "02");
   assert.equal(calls[0][1].placement.alias, "02");
+  assert.equal(calls[0][1].placement.physicalLabel, "rack-02");
+  assert.equal(calls[1][1].placement.physicalLabel, "rack-02");
   assert.equal(calls[1][1].idempotencyKey, next.operationKey);
   assert.equal(calls[1][1].idempotencyKey.includes(":a"), false);
+});
+
+test("ControlPlaneHttpClient forwards physicalLabel and exposes session heartbeat", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    if (String(url).endsWith("/sessions")) {
+      return {
+        ok: true,
+        status: 201,
+        async json() {
+          return {
+            session: {
+              sessionId: "sess_fixture",
+              leaseId: "lease_fixture",
+              token: "token_fixture",
+              deviceId: "dev_fixture",
+              routeDecision: { selectedDevice: { alias: "02", physicalLabel: "rack-02" } },
+            },
+          };
+        },
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      async json() { return { session: { sessionId: "sess_fixture", leaseId: "lease_fixture" } }; },
+    };
+  };
+  try {
+    const client = new ControlPlaneHttpClient();
+    assert.equal(client.transportLane instanceof SingleFlightArbiter, true);
+    const session = await client.acquireSession({
+      actorId: "fixture",
+      capabilityId: "xiaowei.explorer.primitive",
+      alias: "02",
+      physicalLabel: "rack-02",
+      workflowId: "workflow.fixture",
+    });
+    await client.heartbeatSession({ sessionId: session.sessionId, token: session.token });
+    assert.equal(session.physicalLabel, "rack-02");
+    const acquireBody = JSON.parse(requests[0].init.body);
+    assert.deepEqual(acquireBody.placement, { alias: "02", physicalLabel: "rack-02" });
+    assert.match(requests[1].url, /\/sessions\/sess_fixture\/heartbeat$/);
+    assert.deepEqual(JSON.parse(requests[1].init.body), { token: "token_fixture" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("technical success with wrong app is a business rejection", async () => {
