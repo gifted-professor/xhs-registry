@@ -1,6 +1,46 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-10 `/xw start` 一键 readiness 入口已完成 Windows live 验收
+> 最后更新：2026-08-10 `/xw` 四机小红书 bounded dry-run 已 4/4 live 验收
+
+## 2026-08-10 `/xw` 四机小红书发布编辑 dry-run（4/4 live）
+
+**结论**：`/xw` 现在能以四个正式 `typed_job` 同时占用 01–04；任务级并发成立，
+效卫 22222 的单个传输请求仍由控制面共享 broker 做 FIFO single-flight。不是四台业务整段串行，
+也不宣称多 WebSocket / 按设备 lane 真并行。
+
+**实现**：
+- routing `main`=`origin/main`=`bc0ce1ba20d01e91755c164cef03fba916c945dc`；新增
+  `xhs.publish.edit_dry_run` bounded workflow。整条流程在控制面进程内连续执行，不再为每个
+  tap/dump/input 新建 Node 子进程、session job 与 transport 对象；固定等待在 FIFO 锁外。
+- 共享 `XiaoweiTransport` 保留跨进程锁和进程内公平队列；供应商“一条 WS 多请求”尚未验证，
+  所以持久 WS reuse 默认关闭。
+- workflow 只接受正式 catalog capability 与 caption，不接受调用方 action 数组；只观察
+  `发布/发笔记/存草稿/保存并退出`，从不点击；退出只认明确 no-save 分支，未知页面 fail-closed。
+  同时修复 UIAutomator 属性局部 UTF-16LE 中文、`返回编辑/保存并退出` 菜单、选图后相册停留或
+  自动进入编辑页两种状态。
+- `/xw` 修复 deployed-runtime catalog 兼容：授权提示为 null 时改读
+  `policy.implementationSupport.job` 做 advisory eligibility，真正授权仍只由 Control Plane 决定；
+  Registry `/api/capabilities` 补透传 contract hash algorithm / closure / TCB 元数据，避免
+  ExecutionPlan 在 resume 闸门误报算法漂移。Registry commits：`9c74389`、`afef96f`。
+
+**live 证据**：
+- 单机 01 基线 `job_4f3a6de3-f0c1-43a3-942a-82183d3569d3`：62.8s，
+  `completedNoSave`，verification/restoration/returnHome 全 true。
+- 四机 run `run_2098ccca-ac31-4de6-924b-0b66cfdd7433`：四条 lease 同时可见且 heartbeat 续期；
+  4/4 accepted、0 failed/blocked/ambiguous、每台 1 attempt。01–04 job 分别为
+  `job_15035c41-a39e-46dd-b516-035123896d95`、
+  `job_d10b5e96-1e19-48cc-b258-56185f1cc211`、
+  `job_ab899217-2aaf-44c9-a1b5-7e7b31f9caba`、
+  `job_c346898b-0205-4652-97fc-54cae6bfcb75`；耗时 177.7/223.4/223.5/223.5s，
+  总墙钟约 226s，均 `completedNoSave` 且 verification/restoration/returnHome=true。
+- 单机基线严格串行推算约 251s，当前墙钟约快 10%；收益主要来自任务重叠和消除碎片开销，
+  不会接近 4 倍，剩余瓶颈仍是 22222 single-flight 与 App 页面加载。
+- 终态：4/4 ready/free、`leases=[]`、0 running job、0 pending approval、无隔离。
+
+**验证与留痕**：routing 关键套件 44/44 + check/secret scan + release gates 通过；registry
+新增定向 5/5 和 capability catalog 测试通过。完整 registry 套件另有既有 cold-cache
+singleflight 时序 flake（0 READ vs 1），与本改动无关。知识库：
+`xw-xhs-4machine-bounded-workflow-20260810`（recipe，verifyMode=replay）。
 
 ## 2026-08-10 `/xw start` 一键启动与 readiness
 
