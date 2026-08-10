@@ -29,6 +29,7 @@ function planWith({ nodes, requestKey = "fixture-request", execution = {} }) {
 function fleet(capabilities = ["cap.a", "cap.b", "cap.c", "cap.d"]) {
   return ["01", "02", "03", "04"].map((alias) => ({
     alias,
+    physicalLabel: `rack-${alias}`,
     online: true,
     ready: true,
     lease: "free",
@@ -127,12 +128,14 @@ test("four heterogeneous work units overlap but reduce in plan order", async () 
   });
   let active = 0;
   let peak = 0;
+  const placements = [];
   const result = await runBound({
     taskRunId: "run_fixture",
     plan,
     fleetProvider: async () => fleet(),
     worker: {
       async execute(assignment) {
+        placements.push([assignment.alias, assignment.physicalLabel]);
         active += 1;
         peak = Math.max(peak, active);
         await delay({ "01": 40, "02": 30, "03": 20, "04": 10 }[assignment.alias]);
@@ -147,6 +150,12 @@ test("four heterogeneous work units overlap but reduce in plan order", async () 
   assert.deepEqual(result.results.map((item) => item.output.value), ["A", "B", "C", "D"]);
   assert.deepEqual(result.orderedItems.map((entry) => entry.item.value), ["A", "B", "C", "D"]);
   assert.deepEqual(result.results.map((item) => item.alias), ["01", "02", "03", "04"]);
+  assert.deepEqual(placements.sort(), [
+    ["01", "rack-01"],
+    ["02", "rack-02"],
+    ["03", "rack-03"],
+    ["04", "rack-04"],
+  ]);
 }));
 
 test("same device never runs two heavy work units concurrently", async () => withStore(async (store) => {

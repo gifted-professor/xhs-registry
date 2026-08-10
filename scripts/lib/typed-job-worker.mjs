@@ -10,6 +10,73 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function nonEmptyString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Keep placement selectors attached to the assignment all the way to the
+ * control plane.  Alias is still the scheduler-facing selector; physicalLabel
+ * is the stable pilot-scope selector used when aliases are not sufficient.
+ */
+export function assignmentPlacement(assignment) {
+  const shardPlacement = assignment?.shard?.placement || {};
+  const nodePlacement = assignment?.node?.placement || {};
+  const boundPlacement = assignment?.boundNode?.placementConstraint || {};
+  const alias = nonEmptyString(assignment?.alias)
+    || nonEmptyString(shardPlacement.alias)
+    || nonEmptyString(nodePlacement.alias)
+    || nonEmptyString(boundPlacement.alias);
+  const physicalLabel = nonEmptyString(assignment?.physicalLabel)
+    || nonEmptyString(assignment?.device?.physicalLabel)
+    || nonEmptyString(shardPlacement.physicalLabel)
+    || nonEmptyString(nodePlacement.physicalLabel)
+    || nonEmptyString(boundPlacement.physicalLabel);
+  return {
+    ...(alias ? { alias } : {}),
+    ...(physicalLabel ? { physicalLabel } : {}),
+  };
+}
+
+/**
+ * Fair, injectable single-flight lane for shared transports.  It deliberately
+ * serializes only the operation passed to run(); callers can interleave
+ * workflow planning and offline work without holding the lane.
+ */
+export class SingleFlightArbiter {
+  constructor({ name = "single-flight" } = {}) {
+    this.name = name;
+    this.queue = [];
+    this.active = false;
+    this.sequence = 0;
+  }
+
+  run(operation, metadata = {}) {
+    if (typeof operation !== "function") throw new TypeError(`${this.name}: operation must be a function`);
+    return new Promise((resolve, reject) => {
+      this.queue.push({ operation, metadata, resolve, reject, sequence: ++this.sequence });
+      this.#drain();
+    });
+  }
+
+  get pending() {
+    return this.queue.length;
+  }
+
+  #drain() {
+    if (this.active || this.queue.length === 0) return;
+    const item = this.queue.shift();
+    this.active = true;
+    Promise.resolve()
+      .then(() => item.operation(item.metadata))
+      .then(item.resolve, item.reject)
+      .finally(() => {
+        this.active = false;
+        this.#drain();
+      });
+  }
+}
+
 function unwrapJob(result) {
   return result?.job || result?.data?.job || result;
 }
@@ -90,26 +157,37 @@ export function validateBusinessOutput({ acceptance, output }) {
 }
 
 export class ControlPlaneHttpClient {
-  constructor({ baseUrl = "http://127.0.0.1:17920/", requestTimeoutMs = 15000 } = {}) {
+  constructor({ baseUrl = "http://127.0.0.1:17920/", requestTimeoutMs = 15000, transportLane } = {}) {
     this.baseUrl = baseUrl;
     this.requestTimeoutMs = requestTimeoutMs;
+    // Existing callers get a safe local single-flight lane automatically;
+    // tests/integrators may inject a shared lane, or pass null explicitly.
+    this.transportLane = transportLane === undefined
+      ? new SingleFlightArbiter({ name: "control-plane-transport" })
+      : transportLane;
   }
 
   async request(method, path, body) {
-    const response = await fetch(new URL(path, this.baseUrl), {
-      method,
-      headers: body ? { "content-type": "application/json" } : {},
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(this.requestTimeoutMs),
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      const error = new Error(result?.error?.message || `control plane request failed (${response.status})`);
-      error.code = result?.error?.code || "CONTROL_REQUEST_FAILED";
-      error.details = result?.error?.details;
-      throw error;
+    const request = async () => {
+      const response = await fetch(new URL(path, this.baseUrl), {
+        method,
+        headers: body ? { "content-type": "application/json" } : {},
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        const error = new Error(result?.error?.message || `control plane request failed (${response.status})`);
+        error.code = result?.error?.code || "CONTROL_REQUEST_FAILED";
+        error.details = result?.error?.details;
+        throw error;
+      }
+      return result;
+    };
+    if (this.transportLane?.run) {
+      return this.transportLane.run(request, { method, path });
     }
-    return result;
+    return request();
   }
 
   routePlan(input) {
@@ -133,20 +211,27 @@ export class ControlPlaneHttpClient {
   }
 
   acquireSession(input) {
+    const placement = {
+      ...(input.placement && typeof input.placement === "object" ? input.placement : {}),
+      ...(nonEmptyString(input.alias) ? { alias: nonEmptyString(input.alias) } : {}),
+      ...(nonEmptyString(input.physicalLabel) ? { physicalLabel: nonEmptyString(input.physicalLabel) } : {}),
+    };
     return this.request("POST", "/control/v1/sessions", {
       actorId: input.actorId,
       capabilityId: input.capabilityId,
       canary: input.canary !== false,
-      placement: { alias: input.alias },
+      placement,
       ...(input.workflowId ? { metadata: { workflowId: input.workflowId } } : {}),
     }).then((payload) => {
       const session = payload?.session || payload;
+      const selectedDevice = session.routeDecision?.selectedDevice || session.selectedDevice || {};
       return {
         sessionId: session.sessionId,
         leaseId: session.leaseId,
         token: session.token,
         deviceId: session.deviceId,
-        alias: session.routeDecision?.selectedDevice?.alias || input.alias,
+        alias: selectedDevice.alias || session.alias || input.alias,
+        physicalLabel: selectedDevice.physicalLabel || session.physicalLabel || placement.physicalLabel || null,
         expiresAt: session.expiresAt,
         raw: payload,
       };
@@ -182,6 +267,14 @@ export class ControlPlaneHttpClient {
       `/control/v1/sessions/${encodeURIComponent(input.sessionId)}/release`,
       { token: input.token },
     );
+  }
+
+  heartbeatSession(input) {
+    return this.request(
+      "POST",
+      `/control/v1/sessions/${encodeURIComponent(input.sessionId)}/heartbeat`,
+      { token: input.token },
+    ).then((payload) => payload?.session || payload);
   }
 
   getLeases() {
@@ -374,7 +467,7 @@ export class TypedJobWorker {
         actorId: this.actorId,
         capabilityId,
         params: assignment.shard.params,
-        placement: { alias: assignment.alias },
+        placement: assignmentPlacement(assignment),
       };
       if (assignment.resumeJobId) {
         phase = "submitted";
