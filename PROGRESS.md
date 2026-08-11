@@ -1,6 +1,18 @@
 # xhs-registry 进度
 
-> 最后更新：2026-08-10 飞书→小红书 dry-run 流程沉淀（默认入口 + 回归约定）
+> 最后更新：2026-08-11 User 环境变量 `XHS_ACTOR=claude-pilot-20260809`
+
+## 2026-08-11 默认碰机 actor：`XHS_ACTOR`
+
+**原因**：`nonpayment_v1` + `pilotOnly` 下，不在 `CONTROL_PLANE_PILOT_ACTORS` 的 actor 会直接 `AUTONOMY_PILOT_SCOPE_MISS`（403）。现场 pilotActors 仅 `claude-pilot-20260809`。
+
+**落地**：
+- Windows User 环境变量：`XHS_ACTOR=claude-pilot-20260809`（新开 shell / Cursor 终端生效；已开进程需重开或手动 `$env:XHS_ACTOR=...`）
+- `/xw start` `chooseActor`：`--actor` → `XHS_ACTOR` → 唯一 `pilotActors` → `xw-start`
+- `/xw explore` acquire：`--actor` 缺省回落 `XHS_ACTOR`
+- balance / home 脚本原本已读 `XHS_ACTOR`（硬编码同名兜底）
+
+**红线不变**：不要自创 `cursor-*` / 日期戳 actor 碰机。
 
 ## 2026-08-10 飞书商品表 → 小红书发布 dry-run（6 图 / stay）
 
