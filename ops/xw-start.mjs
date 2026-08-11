@@ -481,6 +481,8 @@ async function ensureReadiness(snapshot, aliases, actor, actions) {
 
 function chooseActor(explicit, controlHealth) {
   if (explicit) return explicit;
+  const fromEnv = String(process.env.XHS_ACTOR || "").trim();
+  if (fromEnv) return fromEnv;
   const actors = controlHealth?.policyMode?.pilotActors || [];
   if (controlHealth?.policyMode?.pilotOnly === true && actors.length === 1) return actors[0];
   return "xw-start";

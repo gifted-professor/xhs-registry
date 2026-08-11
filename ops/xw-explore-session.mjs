@@ -20,12 +20,13 @@ const sessionFile = opt("--session-file");
 
 function usage() {
   console.log(`用法:
-  node ops/xw-explore-session.mjs acquire --alias <01-04> --actor <id> [--session-file <profile-root.json>]
+  node ops/xw-explore-session.mjs acquire --alias <01-04> [--actor <id>] [--session-file <profile-root.json>]
   node ops/xw-explore-session.mjs status --session-file <absolute.json>
   node ops/xw-explore-session.mjs heartbeat --session-file <absolute.json>
   node ops/xw-explore-session.mjs keepalive --session-file <absolute.json>
   node ops/xw-explore-session.mjs release --session-file <absolute.json>
 
+--actor 默认取环境变量 XHS_ACTOR（本机 User 默认 claude-pilot-20260809）；显式传入优先。
 acquire 会创建正式 canary session lease；token 写入用户私有目录并收紧 ACL，不打印。
 不启动 detached keeper；每次 Explorer op 会 heartbeat，长时间观察时前台运行 keepalive。
 所有 Explorer 设备脚本必须传同一个 --session-file。`);
@@ -54,7 +55,7 @@ try {
   if (command === "acquire") {
     const result = await acquireExplorerSession({
       alias: opt("--alias"),
-      actor: opt("--actor"),
+      actor: opt("--actor") || process.env.XHS_ACTOR || null,
       contextPath: sessionFile,
     });
     console.log(JSON.stringify(publicResult("acquire", result)));
