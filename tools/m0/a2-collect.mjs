@@ -39,7 +39,9 @@ function runTwice(fn) {
 
 function classifyIgnored(rel) {
   const base = rel.split("/")[0];
-  if (base === "node_modules" || base === ".cache" || base === "runtime" || base === "backups" || base === "outbox") {
+  // reproducible-cache: deps, caches, runtime artifacts, temp build products
+  // (tmp-imgs/tmp-know are temp screenshots + temp JSON — NOT archived per plan)
+  if (["node_modules", ".cache", "runtime", "backups", "outbox", "tmp-imgs", "tmp-know"].includes(base) || base.startsWith("tmp-")) {
     return "reproducible-cache";
   }
   if (rel === ".env" || rel.endsWith(".env") || rel.includes("identities.seed") || rel === "registry.db" || rel === "run_begin.ps1") {
