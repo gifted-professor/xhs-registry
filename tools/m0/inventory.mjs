@@ -10,6 +10,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { execFileSync } from "node:child_process";
 
 const DEFAULT_EXCLUDE_DIRS = new Set([
   ".git", "node_modules", ".cache", "tmp", "temp",
@@ -33,6 +34,19 @@ export function* walkFiles(root, excludeDirs = DEFAULT_EXCLUDE_DIRS) {
       yield rel.replace(/\\/g, "/");
     }
   }
+}
+
+/**
+ * Enumerate tracked files via `git ls-files -z` (read-only). Used when the
+ * discovery scope is the frozen source tree rather than the dirty worktree —
+ * the M0-A inventory covers the tracked files at the frozen commit, not WIP
+ * dirs (tmp-know/tmp-imgs/runtime/outbox/backups/node_modules/.env etc.).
+ */
+export function trackedFiles(root) {
+  const out = execFileSync("git", ["-C", root, "ls-files", "-z"], {
+    encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+  });
+  return out.split("\0").filter(Boolean).map((p) => p.replace(/\\/g, "/"));
 }
 
 /** Built-in dimension rules: each returns {dimension, locator, classification, note?}. */
@@ -76,14 +90,66 @@ export const BUILTIN_RULES = {
     return [];
   },
   // ADB / 22222 / FastOperator / GatewayOperator static entrypoints — these are
-  // ABSENT in registry executable code (they live in device-agent). The rule surfaces
-  // any textual reference so the inventory can honestly record presence/absence.
+  // ABSENT in registry executable code (they live in device-agent). The rule
+  // distinguishes doc mentions (md/json/txt/docs) from executable-code refs so the
+  // honest-absence claim is verifiable: deviceControlRef in executable code should
+  // be zero. child_process usage is a legitimate Node API and is recorded as
+  // childProcessRef (not a device-control entrypoint).
   deviceControlEntry: (rel, text) => {
+    const isDoc = /\.(md|json|txt|html)$/i.test(rel) || rel.startsWith("docs/") ||
+      rel === "AGENTS.md" || rel === "CLAUDE.md" || rel === "PROGRESS.md";
+    const hits = [];
     const re = /\b(?:22222|ADB|adb|FastOperator|GatewayOperator)\b/g;
+    let m;
+    while ((m = re.exec(text))) {
+      hits.push({ dimension: "deviceControlEntry", locator: `${rel}:${m.index}`, classification: isDoc ? "docMention" : "deviceControlRef", note: m[0] });
+    }
+    const re2 = /\b(?:child_process|execFileSync|spawn)\b/g;
+    while ((m = re2.exec(text))) {
+      hits.push({ dimension: "deviceControlEntry", locator: `${rel}:${m.index}`, classification: "childProcessRef", note: m[0] });
+    }
+    return hits;
+  },
+  // DB code + config + scheduled-task references: sqlite/registry.db/control.db/
+  // CONTROL_DB_PATH/queryControlDb/readOnly sqlite handles.
+  dbReferences: (rel, text) => {
+    const re = /\b(?:registry\.db|control\.db|CONTROL_DB_PATH|queryControlDb|sqlite|\.sqlite|readOnly\s*:\s*true)\b/g;
     const hits = [];
     let m;
     while ((m = re.exec(text))) {
-      hits.push({ dimension: "deviceControlEntry", locator: `${rel}:${m.index}`, classification: "deviceControlRef", note: m[0] });
+      hits.push({ dimension: "dbReferences", locator: `${rel}:${m.index}`, classification: "dbRef", note: m[0] });
+    }
+    return hits;
+  },
+  // workflow/catalog/recipe/task/legacy directories — task-templates/** files.
+  taskTemplates: (rel) => {
+    if (rel.startsWith("task-templates/")) {
+      return [{ dimension: "taskTemplates", locator: rel, classification: "taskTemplate", note: "" }];
+    }
+    return [];
+  },
+  // launch config / env / default runtime path: .env.example files + explicit
+  // launch-arg/env refs (CONTROL_DB_PATH, --runs-root, --db, --port, --host, --control).
+  launchConfig: (rel, text) => {
+    if (rel === ".env.example" || rel.endsWith("/.env.example")) {
+      return [{ dimension: "launchConfig", locator: rel, classification: "envExample", note: "" }];
+    }
+    const re = /(?:CONTROL_DB_PATH|--runs-root|--db|--port|--host|--control)\b/g;
+    const hits = [];
+    let m;
+    while ((m = re.exec(text))) {
+      hits.push({ dimension: "launchConfig", locator: `${rel}:${m.index}`, classification: "launchConfigRef", note: m[0] });
+    }
+    return hits;
+  },
+  // cross-repo paths / HTTP / schema copy / sibling refs: device-agent repo name,
+  // GPFS mount, github origin, sibling-repo references.
+  crossRepoRefs: (rel, text) => {
+    const re = /(?:xhs-device-agent|\/Volumes\/GPFS|gifted-professor|sibling|schema copy)\b/g;
+    const hits = [];
+    let m;
+    while ((m = re.exec(text))) {
+      hits.push({ dimension: "crossRepoRefs", locator: `${rel}:${m.index}`, classification: "crossRepoRef", note: m[0] });
     }
     return hits;
   },
@@ -108,7 +174,10 @@ export function runDiscovery(root, rules, opts = {}) {
     if (typeof rule === "string" && BUILTIN_RULES[rule]) byDim.set(rule, []);
   }
   let fileCount = 0;
-  for (const rel of walkFiles(root, exclude)) {
+  // trackedOnly: enumerate the frozen source tree via `git ls-files -z` instead
+  // of walking the (dirty) worktree — the M0-A inventory covers tracked files.
+  const files = opts.trackedOnly ? trackedFiles(root) : walkFiles(root, exclude);
+  for (const rel of files) {
     fileCount++;
     let text = "";
     try {

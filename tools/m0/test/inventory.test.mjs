@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BUILTIN_RULES, buildInventory, runDiscovery, walkFiles } from "../inventory.mjs";
+import { execFileSync } from "node:child_process";
+import { BUILTIN_RULES, buildInventory, runDiscovery, walkFiles, trackedFiles } from "../inventory.mjs";
 
 function makeFix() {
   const d = mkdtempSync(join(tmpdir(), "m0inv-"));
@@ -80,6 +81,80 @@ test("dimensions absent from a fixture are simply not present (honest absence)",
     assert.deepEqual(dims.sort(), ["deviceControlEntry", "ports"].sort());
     // both empty
     assert.equal(inv.repos[0].dimensions.find((x) => x.dimension === "ports").items.length, 0);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("dbReferences finds sqlite/control.db/CONTROL_DB_PATH refs", () => {
+  const d = mkdtempSync(join(tmpdir(), "m0inv3-"));
+  try {
+    writeFileSync(join(d, "registry.mjs"), "const CONTROL_DB_PATH = 'C:\\\\Users\\\\Public\\\\xhs-agent-control\\\\control.db';\nqueryControlDb(db);\n");
+    writeFileSync(join(d, "query-routing.mjs"), "new Database(path, { readOnly: true });\n");
+    const { dimensions } = runDiscovery(d, ["dbReferences"]);
+    const items = dimensions.find((x) => x.dimension === "dbReferences").items;
+    assert.ok(items.some((h) => h.note === "CONTROL_DB_PATH"));
+    assert.ok(items.some((h) => h.note === "queryControlDb"));
+    assert.ok(items.some((h) => h.note.includes("readOnly")));
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("taskTemplates enumerates task-templates/** files", () => {
+  const d = mkdtempSync(join(tmpdir(), "m0inv4-"));
+  try {
+    mkdirSync(join(d, "task-templates", "candidates"), { recursive: true });
+    writeFileSync(join(d, "task-templates", "task.x@1.json"), "{}");
+    writeFileSync(join(d, "task-templates", "candidates", "task.y@2.json"), "{}");
+    const { dimensions } = runDiscovery(d, ["taskTemplates"]);
+    const items = dimensions.find((x) => x.dimension === "taskTemplates").items;
+    assert.equal(items.length, 2);
+    assert.ok(items.some((h) => h.locator === "task-templates/task.x@1.json"));
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("launchConfig finds .env.example and launch-arg refs", () => {
+  const d = mkdtempSync(join(tmpdir(), "m0inv5-"));
+  try {
+    writeFileSync(join(d, ".env.example"), "XHS_TOKEN=xxx\n");
+    writeFileSync(join(d, "install-registry-task.ps1"), "--port 17930 --runs-root C:\\\\xhs-agent-runs\n");
+    const { dimensions } = runDiscovery(d, ["launchConfig"]);
+    const items = dimensions.find((x) => x.dimension === "launchConfig").items;
+    assert.ok(items.some((h) => h.classification === "envExample"));
+    assert.ok(items.some((h) => h.note === "--port"));
+    assert.ok(items.some((h) => h.note === "--runs-root"));
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("crossRepoRefs finds device-agent/GPFS/github sibling refs", () => {
+  const d = mkdtempSync(join(tmpdir(), "m0inv6-"));
+  try {
+    writeFileSync(join(d, "watchdog.sh"), "REPO=/Volumes/GPFS/.../xhs-device-agent-routing-v1-1\n");
+    writeFileSync(join(d, "README.md"), "origin: https://github.com/gifted-professor/xhs-registry.git\n");
+    const { dimensions } = runDiscovery(d, ["crossRepoRefs"]);
+    const items = dimensions.find((x) => x.dimension === "crossRepoRefs").items;
+    assert.ok(items.some((h) => h.note === "/Volumes/GPFS"));
+    assert.ok(items.some((h) => h.note === "gifted-professor"));
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("trackedFiles enumerates git-tracked files (read-only)", () => {
+  const d = mkdtempSync(join(tmpdir(), "m0inv7-"));
+  try {
+    writeFileSync(join(d, "a.mjs"), "x");
+    writeFileSync(join(d, "b.txt"), "y");
+    execFileSync("git", ["init", "-q", d]);
+    execFileSync("git", ["-C", d, "add", "a.mjs", "b.txt"]);
+    const files = trackedFiles(d);
+    assert.ok(files.includes("a.mjs"));
+    assert.ok(files.includes("b.txt"));
   } finally {
     rmSync(d, { recursive: true, force: true });
   }
