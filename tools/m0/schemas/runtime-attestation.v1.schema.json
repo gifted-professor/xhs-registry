@@ -21,7 +21,7 @@
     "processStartTime": { "type": ["string", "null"], "format": "date-time" },
     "processCommandLineRedacted": { "type": ["string", "null"] },
     "diskBytesAtObservation": {
-      "type": "object",
+      "type": ["object", "null"],
       "additionalProperties": false,
       "required": ["entryPath", "sha256", "size", "mtimeIso"],
       "properties": {

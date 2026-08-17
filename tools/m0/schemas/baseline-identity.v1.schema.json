@@ -50,7 +50,8 @@
               "dirty": { "type": "boolean" },
               "stagedCount": { "type": "integer", "minimum": 0 },
               "unstagedCount": { "type": "integer", "minimum": 0 },
-              "untrackedCount": { "type": "integer", "minimum": 0 }
+              "untrackedCount": { "type": "integer", "minimum": 0 },
+              "observedVia": { "enum": ["localWorktree", "originOnly", "unreachable"], "description": "How the worktree state was observed. localWorktree = a local checkout was read directly; originOnly = no local checkout on this host, state inferred from the verified origin/main ref; unreachable = no observation possible." }
             }
           },
           "deployment": {
