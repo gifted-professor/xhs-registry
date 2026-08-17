@@ -8,6 +8,8 @@ registry.db-wal
 registry.db-shm
 runtime/
 node_modules/
+__pycache__/
+*.pyc
 
 # Local secrets — only .env.example is committed
 .env
@@ -55,6 +57,7 @@ watchdog/launchd.err.log
 
 # 本地数据库（非源码）
 aionui-backend.db
+.venv-ocr/
 
 # Windows deploy instance runtime / scratch (do not commit)
 outbox/
