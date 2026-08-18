@@ -13,8 +13,18 @@
     "tool": "git filter-repo",
     "version": "2.47.0",
     "mode": "fresh HTTPS clone into scratch dir; never touch live clones; never push back to source repos",
-    "scratchDir": "C:\\Users\\Public\\xw-fusion",
     "refScoping": "MUST pass --refs <importCommit> (read from source-lock.v1.json) so filter-repo rewrites only that SHA and its ancestors, NOT the whole repo history. Without --refs, filter-repo's default rewrites every ref in the fresh clone; if the source-repo tip advances between lock and import, or stray local refs exist, the rewritten tip may diverge from the GitHub merge commit. --refs binds the rewrite to the locked importCommit."
+  },
+  "scratch": {
+    "root": "C:\\Users\\Public\\xw-fusion",
+    "workingDirectoryTemplate": "<root>\\<importId>\\<sourceRepo>",
+    "importIdFormat": "xw-f1c-registry-<UTC>-<shortSHA> | xw-f1d-device-agent-<UTC>-<shortSHA>",
+    "subdirs": ["source", "rewritten", "target"],
+    "precondition": "working directory must not exist",
+    "onExistingPath": "BLOCK",
+    "reuseAllowed": false,
+    "overwriteAllowed": false,
+    "rules": "directory does not exist -> create; directory already exists -> BLOCK; never auto-delete, never overwrite, never clear-and-reuse. This is the only way to guarantee a fresh import free of leftover refs, objects, worktree files, or receipts from a prior import."
   },
   "historyRequirement": "git log --follow must trace every imported path back to the source repo history",
   "verification": {
@@ -25,7 +35,13 @@
     "blobParity": "blob OIDs reused; verify original blobs still present via git cat-file --batch-check",
     "modeParity": "executable mode unchanged",
     "treeParity": "missingFileCount=0 and extraFileCount=0",
-    "fileCountParity": "imported tracked file count equals original tracked file count"
+    "fileCountParity": "imported tracked file count equals original tracked file count",
+    "sourceTreeMatchesLock": true,
+    "sourceTreeMatchesLockNote": "receipt.originalTreeSha MUST equal sourceLock.<repo>.importTreeSha and receipt.originalCommit MUST equal sourceLock.<repo>.importCommit",
+    "rewrittenTipMapsFromImportCommit": true,
+    "rewrittenTipMapsFromImportCommitNote": "git-filter-repo commit-map MUST map sourceLock.<repo>.importCommit -> rewrittenTipCommit",
+    "importedCommitBeyondLockCount": 0,
+    "importedCommitBeyondLockCountNote": "commits after the locked importCommit accidentally brought into import history MUST be 0 (recorded as advanceCommitCount in the receipt)"
   },
   "forbids": [
     "runtime changes",
@@ -49,7 +65,7 @@
   },
   "receiptFields": [
     "schemaVersion", "importId", "originalRepo", "originalCommit", "originalTreeSha",
-    "targetBaseCommit", "rewrittenTipCommit", "fusionMergeCommit", "importFeatureHeadCommit",
+    "targetBaseCommit", "rewrittenTipCommit", "fusionMergeCommit",
     "importDirectory",
     "originalTrackedFileCount", "importedTrackedFileCount",
     "blobMismatchCount", "modeMismatchCount", "missingFileCount", "extraFileCount",
@@ -58,10 +74,9 @@
   "receiptTimeline": [
     "targetBaseCommit — xw-platform main tip the unrelated-histories merge lands on",
     "rewrittenTipCommit — filter-repo output tip (services/<prefix> subtree, --refs scoped to importCommit)",
-    "fusionMergeCommit — git merge --allow-unrelated-histories --no-ff of rewrittenTip into targetBase",
-    "importFeatureHeadCommit — feature-branch commit that adds this receipt file (PR head before GitHub merge)",
-    "githubPrMergeCommit — GitHub-generated merge of the F1-C/F1-D PR into xw-platform main (recorded post-merge, not part of this receipt)"
+    "fusionMergeCommit — git merge --allow-unrelated-histories --no-ff of rewrittenTip into targetBase"
   ],
+  "receiptSelfCommitNote": "The commit that adds this receipt file is queryable via git log -1 --format=%H -- docs/fusion/import-<importId>.v1.json; it is NOT a field in the receipt (self-reference: the SHA only exists after the file is committed). The GitHub PR merge commit is recorded post-merge in acceptance artifacts, not in the import receipt.",
   "sourceLock": "docs/fusion/source-lock.v1.json",
   "gates": {
     "sourceFusionGate": "OPEN",
