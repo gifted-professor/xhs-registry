@@ -1,3 +1,5 @@
+> **Archived 2026-08-19.** Development and production runtime have moved to [xw-platform](https://github.com/gifted-professor/xw-platform).
+
 # xhs-registry
 
 多设备自动化的 **Windows 入口仓**：registry 面板（端口 `17930`）、`/xw` 命令面、身份/知识库。
